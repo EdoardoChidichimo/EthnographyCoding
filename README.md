@@ -15,7 +15,7 @@ Can large language models (LLMs) can perform ethnographic feature extraction at 
 
 ## Project Structure
 
-- **main.py**  
+_main.py_
   Orchestrates the pipeline:
   - Extracts and cleans text from PDF ethnographies.
   - Uses transformer-based embeddings for topic modeling.
