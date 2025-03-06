@@ -4,6 +4,7 @@ Can large language models (LLMs) can perform ethnographic feature extraction at 
 
 ## Considerations:
 - How is the source data structured? (e.g., by rituals/religions) and how do the ethnographic texts map (e.g., one ethnography covering multiple rituals)?
+- Need a database of all the ethnographic texts used and mapped to rituals.
 - Ethnographies may talk about _other_ rituals which may confuse the LLMs.
 - How will we pass ethnographic texts through (LLM context window not large enough for single file)?:
   - Pass through paragraph/section/chapter (sizes vary)
