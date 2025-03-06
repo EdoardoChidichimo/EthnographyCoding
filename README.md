@@ -23,21 +23,21 @@ Can large language models (LLMs) can perform ethnographic feature extraction at 
   - Aggregates the results and exports them to CSV.
 
 - _extract_text.py_  
-  Contains functions to extract text from PDF files (using `pdfplumber` and OCR via `pytesseract`), and clean the extracted text.
+  - Contains functions to extract text from PDF files (using `pdfplumber` and OCR via `pytesseract`), and clean the extracted text.
 
 - topic_modelling.py_  
-  Uses Latent Dirichlet Allocation (LDA) or Sentence‑BERT to encode paragraphs and clusters them into topics using KMeans.
+  - Uses Latent Dirichlet Allocation (LDA) or Sentence‑BERT to encode paragraphs and clusters them into topics using KMeans.
 
 - _llm_annotate.py_
-  Handles LLM queries for feature annotation.  
+  - Handles LLM queries for feature annotation.  
 
 - _evaluation.py_
-  Evaluates model outputs against human-coded data.  
+  - Evaluates model outputs against human-coded data.  
   - Computes metrics (accuracy, Cohen’s kappa, macro F1, MCC).  
   - Provides per-feature error analysis, including confusion matrices and McNemar’s tests for statistical significance.
 
 - _visualisation.py_
-  Visualise model performance and the correlation between evaluation metrics.
+  - Visualise model performance and the correlation between evaluation metrics.
 
 ## Setup
 
