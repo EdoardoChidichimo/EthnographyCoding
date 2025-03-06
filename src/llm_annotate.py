@@ -6,7 +6,6 @@ import asyncio
 from config import LLM_MODELS
 from utils import load_ritual_features, format_prompt, repair_json, normalise_result, aggregate_results
 
-# Load ritual features once on module import.
 RITUAL_FEATURES = load_ritual_features()
 
 def query_openai(text_section, model="gpt-4"):

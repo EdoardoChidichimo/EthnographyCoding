@@ -1,5 +1,3 @@
-# evaluation.py
-
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
@@ -8,9 +6,8 @@ from sklearn.metrics import (confusion_matrix, f1_score, accuracy_score, cohen_k
 from statsmodels.stats.contingency_tables import mcnemar
 
 def load_data():
-    """Loads human-coded and LLM-coded data."""
-    human_data = pd.read_csv("../data/human_coded.csv")  # Ground truth
-    model_data = pd.read_csv("../data/model_predictions.csv")  # LLM outputs
+    human_data = pd.read_csv("../data/human_coded.csv")  # Human coders' annotations
+    model_data = pd.read_csv("../data/model_predictions.csv")  # LLM annotations
     return human_data, model_data
 
 def prediction_agreement(human_data, model_data):
