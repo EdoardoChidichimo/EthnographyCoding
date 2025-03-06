@@ -70,14 +70,12 @@ def per_feature_analysis(human_data, model_data):
 
 def main():
     human_data, model_data = load_data()
+
     prediction_agreement_metrics = prediction_agreement(human_data, model_data)
     prediction_agreement_metrics.to_csv("../data/prediction_agreement_metrics.csv", index=False)
     
-    # Optionally, run per-feature error analysis
     feature_analysis = per_feature_analysis(human_data, model_data)
-    # Save or log feature_analysis as needed
-    print("Per-feature analysis:", feature_analysis)
-
+    feature_analysis.to_csv("../data/feature_analysis.csv", index=False)
 
 if __name__ == "__main__":
     main()
