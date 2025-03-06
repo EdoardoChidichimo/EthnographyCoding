@@ -12,6 +12,9 @@ CULTURAL_FEATURES = [
     "Communal feasting"
 ]
 
+# NEED TO COMPLETE
+CATEGORICAL_FEATURES = {}
+
 LLM_MODELS = {
     "gpt-4": {"api_key": OPENAI_API_KEY, "provider": "openai"},
     "claude-2": {"api_key": ANTHROPIC_API_KEY, "provider": "anthropic"},

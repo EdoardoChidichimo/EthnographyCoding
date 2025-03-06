@@ -2,6 +2,16 @@
 
 Can large language models (LLMs) can perform ethnographic feature extraction at a level comparable to human coders? Advanced NLP techniques are combined with transformer-based embeddings and multiple LLM APIs (e.g., GPT-4, Claude-2, Mistral-7B) to annotate sociocultural features in ethnographic texts.
 
+## Considerations:
+- How is the source data structured? (e.g., by rituals/religions) and how do the ethnographic texts map (e.g., one ethnography covering multiple rituals)?
+- Ethnographies may talk about _other_ rituals which may confuse the LLMs.
+- How will we pass ethnographic texts through (LLM context window not large enough for single file)?:
+  - Pass through paragraph/section/chapter (sizes vary)
+  - Latent Dirichlet Allocation (LDA) 
+  - Transformer-based embeddings and KMeans clustering
+- Test across multiple LLMs
+- Inter-reliability score comparison per ritual or across all rituals? (Could do both: Aggregated and per-ritual metrics) 
+
 ## Project Structure
 
 - **main.py**  
@@ -15,12 +25,10 @@ Can large language models (LLMs) can perform ethnographic feature extraction at 
   Contains functions to extract text from PDF files (using `pdfplumber` and OCR via `pytesseract`), and clean the extracted text.
 
 - **topic_modelling.py**  
-  Uses Sentence‑BERT to encode paragraphs and clusters them into topics using KMeans.
+  Uses Latent Dirichlet Allocation (LDA) or Sentence‑BERT to encode paragraphs and clusters them into topics using KMeans.
 
 - **llm_annotate.py**  
   Handles LLM queries for feature annotation.  
-  - Implements JSON post-processing (repairing and normalization) to ensure consistency.  
-  - Uses asynchronous API calls with a retry mechanism and dynamic rate limiting.
 
 - **evaluation.py**  
   Evaluates model outputs against human-coded data.  
@@ -28,7 +36,7 @@ Can large language models (LLMs) can perform ethnographic feature extraction at 
   - Provides per-feature error analysis, including confusion matrices and McNemar’s tests for statistical significance.
 
 - **visualisation.py**  
-  Generates publication-quality plots to visualize model performance and the correlation between evaluation metrics.
+  Visualise model performance and the correlation between evaluation metrics.
 
 ## Setup
 

@@ -17,7 +17,7 @@ plt.rcParams.update({
 })
 
 def load_results():
-    return pd.read_csv("data/overall_prediction_agreement.csv")
+    return pd.read_csv("../results/overall_prediction_agreement.csv")
 
 def plot_model_performance(df):
     """
