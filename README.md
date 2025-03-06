@@ -15,28 +15,28 @@ Can large language models (LLMs) can perform ethnographic feature extraction at 
 
 ## Project Structure
 
-_main.py_
+- _main.py_
   Orchestrates the pipeline:
   - Extracts and cleans text from PDF ethnographies.
   - Uses transformer-based embeddings for topic modeling.
   - Queries multiple LLMs for annotation.
   - Aggregates the results and exports them to CSV.
 
-- **extract_text.py**  
+- _extract_text.py_  
   Contains functions to extract text from PDF files (using `pdfplumber` and OCR via `pytesseract`), and clean the extracted text.
 
-- **topic_modelling.py**  
+- topic_modelling.py_  
   Uses Latent Dirichlet Allocation (LDA) or Sentence‑BERT to encode paragraphs and clusters them into topics using KMeans.
 
-- **llm_annotate.py**  
+- _llm_annotate.py_
   Handles LLM queries for feature annotation.  
 
-- **evaluation.py**  
+- _evaluation.py_
   Evaluates model outputs against human-coded data.  
   - Computes metrics (accuracy, Cohen’s kappa, macro F1, MCC).  
   - Provides per-feature error analysis, including confusion matrices and McNemar’s tests for statistical significance.
 
-- **visualisation.py**  
+- _visualisation.py_
   Visualise model performance and the correlation between evaluation metrics.
 
 ## Setup
