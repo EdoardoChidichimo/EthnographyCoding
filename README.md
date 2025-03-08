@@ -3,47 +3,132 @@
 Can large language models (LLMs) can perform ethnographic feature extraction at a level comparable to human coders? Advanced NLP techniques are combined with transformer-based embeddings and multiple LLM APIs (e.g., GPT-4, Claude-2, Mistral-7B) to annotate sociocultural features in ethnographic texts.
 
 ## Considerations:
-- Test across multiple LLMs
-- Inter-reliability score comparison per ritual or across all rituals? (Could do both: Aggregated and per-ritual metrics) 
+- LLM sampling (just single sample + bootstrap (perhaps temp=0); or multiple samples and take mode)?
+
+## Key Features
+
+- **Multi-model comparison**: Evaluates annotations from OpenAI, Anthropic, and Hugging Face models
+- **Comprehensive evaluation**: Calculates accuracy, precision, recall, F1 score, Cohen's Kappa, and Matthews Correlation Coefficient
+- **Statistical significance testing**: Uses Friedman and Wilcoxon signed-rank tests to determine if performance differences between models are statistically significant
+- **Robust error handling**: Implements retry mechanisms with exponential backoff for API rate limits and timeouts
+- **Detailed visualisations**: Generates performance heatmaps, confusion matrices, and statistical significance matrices
 
 ## Project Structure
 
-- _main.py_
-  Orchestrates the pipeline:
-  - Extracts and cleans text from PDF ethnographies.
-  - Uses transformer-based embeddings for topic modeling.
-  - Queries multiple LLMs for annotation.
-  - Aggregates the results and exports them to CSV.
+```
+├── data/
+│   ├── ritual_texts.csv         # Source ethnographic texts with ritual_number and paragraph
+│   ├── ritual_features.csv      # Features to be annotated with descriptions
+│   ├── human_coded.csv          # Human annotations (ground truth)
+│   └── model_predictions.csv    # Generated model predictions
+├── results/
+│   ├── figures/                 # Generated visualisations
+│   ├── final_coded_ethnography.json # Nested results structure
+│   ├── overall_prediction_agreement.csv # Overall model performance metrics
+│   ├── per_feature_metrics.csv  # Performance metrics by feature
+│   ├── feature_analysis_detailed.csv # Detailed feature analysis with confusion matrices
+│   ├── pairwise_model_tests.csv # Statistical comparisons between model pairs
+│   └── statistical_tests.json   # Results of statistical significance tests
+├── logs/
+│   ├── evaluation.log           # Logs from the evaluation process
+│   └── visualization.log        # Logs from the visualisation process
+├── src/
+│   ├── main.py                  # Main script to run the annotation pipeline
+│   ├── config.py                # API keys and model configuration
+│   ├── llm_annotate.py          # LLM API interaction and annotation logic
+│   ├── utils.py                 # Utility functions for data processing
+│   ├── evaluation.py            # Statistical evaluation of model performance
+│   ├── vis.py                   # Visualisation of results
+│   ├── visualisation.py         # Additional visualisation utilities
+│   ├── topic_modelling.py       # Topic modelling for ritual texts
+│   └── extract_text.py          # Text extraction utilities
+└── requirements.txt             # Project dependencies
+```
 
-- _extract_text.py_  
-  - Contains functions to extract text from PDF files (using `pdfplumber` and OCR via `pytesseract`), and clean the extracted text.
+## Workflow
 
-- _topic_modelling.py_  
-  - Uses Latent Dirichlet Allocation (LDA) or Sentence‑BERT to encode paragraphs and clusters them into topics using KMeans.
+1. **Data Loading**: Ethnographic texts are loaded from `ritual_texts.csv`
+2. **Feature Definition**: Ritual features are loaded from `ritual_features.csv`
+3. **LLM Annotation**: Each text is processed by multiple LLM models
+4. **Result Aggregation**: Results are aggregated and normalised
+5. **Evaluation**: Model predictions are compared against human annotations
+6. **Statistical Analysis**: Performance differences are tested for statistical significance
+7. **Visualisation**: Results are visualised through various plots and figures
 
-- _llm_annotate.py_
-  - Handles LLM queries for feature annotation.  
+## Statistical Analysis
 
-- _evaluation.py_
-  - Evaluates model outputs against human-coded data.  
-  - Computes metrics (accuracy, Cohen’s kappa, macro F1, MCC).  
-  - Provides per-feature error analysis, including confusion matrices and McNemar’s tests for statistical significance.
+The project implements several statistical analyses:
 
-- _visualisation.py_
-  - Visualise model performance and the correlation between evaluation metrics.
+- **Performance Metrics**: Accuracy, precision, recall, F1 score, Cohen's Kappa, and Matthews Correlation Coefficient
+- **Bootstrap Confidence Intervals**: Non-parametric estimation of uncertainty in performance metrics
+- **Friedman Test**: Non-parametric test to detect differences across multiple models
+- **Wilcoxon Signed-Rank Test**: Pairwise comparison of models with Bonferroni correction
+- **McNemar's Test**: Evaluates whether models differ in their error patterns
+- **ROC Curve Analysis**: For binary features, evaluates true positive vs. false positive rates
 
-## Setup
+## Visualisations
 
-1. **Dependencies:**  
-   Ensure you have the following installed:
-   - Python 3.8+
-   - `pdfplumber`, `pytesseract`, `pdf2image`
-   - `sentence-transformers`, `scikit-learn`
-   - `openai`, `requests`
-   - `pandas`, `numpy`
-   - `matplotlib`, `seaborn`
-   - `statsmodels`
+The project generates several visualisations:
 
-   You can install dependencies using:
-   ```bash
+- **Model Performance Comparison**: Bar charts with error bars showing performance across metrics
+- **Feature Performance Heatmap**: Shows which models perform best on which features
+- **Confusion Matrices**: For each model-feature combination
+- **Statistical Significance Matrix**: Shows which model differences are statistically significant
+- **Summary Figure**: Comprehensive overview of key findings
+
+## Setup and Usage
+
+1. **Install dependencies**:
+   ```
    pip install -r requirements.txt
+   ```
+
+2. **Configure API keys**:
+   Edit `src/config.py` to add your API keys for OpenAI, Anthropic, and Hugging Face.
+
+3. **Prepare data**:
+   - Place your ethnographic texts in `data/ritual_texts.csv`
+   - Define ritual features in `data/ritual_features.csv`
+   - Add human annotations in `data/human_coded.csv`
+
+4. **Run the annotation pipeline**:
+   ```
+   python src/main.py
+   ```
+
+5. **Evaluate model performance**:
+   ```
+   python src/evaluation.py
+   ```
+
+6. **Generate visualisations**:
+   ```
+   python src/vis.py
+   ```
+
+## Error Handling
+
+The system implements robust error handling for API interactions:
+- Rate limit detection with exponential backoff
+- Timeout handling with retries
+- JSON parsing error recovery
+- Comprehensive logging
+
+## Future Improvements
+
+Potential enhancements to the project:
+- Implement multiple LLM runs per ritual to estimate model uncertainty
+- Implement active learning to improve model performance over time
+
+## Requirements
+
+- Python 3.8+
+- pandas
+- numpy
+- matplotlib
+- seaborn
+- scikit-learn
+- statsmodels
+- openai
+- requests
+- asyncio
