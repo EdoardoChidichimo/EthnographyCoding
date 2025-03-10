@@ -5,10 +5,14 @@ import seaborn as sns
 from pathlib import Path
 import logging
 
+# Create logs directory if it doesn't exist
+log_dir = Path(__file__).parent.parent / "logs"
+log_dir.mkdir(parents=True, exist_ok=True)
+
 # Setup logging
 logging.basicConfig(level=logging.INFO, 
                     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-                    handlers=[logging.FileHandler("../logs/visualization.log"),
+                    handlers=[logging.FileHandler(log_dir / "visualization.log"),
                               logging.StreamHandler()])
 logger = logging.getLogger(__name__)
 
@@ -33,23 +37,45 @@ def ensure_directory(path):
 
 def load_results():
     """Load results from CSV files"""
-    results_path = Path("../results")
-    ensure_directory(results_path)
+    base_path = Path(__file__).parent.parent
+    results_path = base_path / "results"
+    eval_path = base_path / "evaluation"
+    ensure_directory(eval_path)
     
     files = {
-        "overall": results_path / "overall_prediction_agreement.csv",
-        "feature": results_path / "per_feature_metrics.csv",
-        "feature_detailed": results_path / "feature_analysis_detailed.csv",
+        "model_evaluations": [],  # Will hold individual model evaluation files
+        "summary": eval_path / "evaluation_summary.csv",
+        "feature_analysis": results_path / "feature_analysis_detailed.csv",
         "pairwise": results_path / "pairwise_model_tests.csv"
     }
     
     data = {}
+    
+    # Load model-specific evaluation files
+    from config import LLM_MODELS
+    for model in LLM_MODELS:
+        model_file = eval_path / f"{model}_evaluation.csv"
+        if model_file.exists():
+            df = pd.read_csv(model_file)
+            df['model'] = model
+            data.setdefault('model_evaluations', []).append(df)
+            print(f"Loaded evaluation data for {model}")
+    
+    # Combine model evaluations if any exist
+    if 'model_evaluations' in data and data['model_evaluations']:
+        data['model_evaluations'] = pd.concat(data['model_evaluations'], ignore_index=True)
+    
+    # Load other result files
     for key, filepath in files.items():
-        if filepath.exists():
-            data[key] = pd.read_csv(filepath)
-            logger.info(f"Loaded {key} data from {filepath}")
-        else:
-            logger.warning(f"File not found: {filepath}")
+        if key != 'model_evaluations':  # Skip as we handled this above
+            if filepath.exists():
+                data[key] = pd.read_csv(filepath)
+                print(f"Loaded {key} data")
+            else:
+                print(f"Optional file not found: {filepath}")
+    
+    if not data:
+        raise FileNotFoundError("No evaluation results found")
     
     return data
 
@@ -624,5 +650,49 @@ def plot_model_agreement_network(pairwise_df, output_dir="../results/figures"):
     except ImportError:
         logger.warning("networkx not available - skipping model agreement network plot")
 
+def main():
+    """Generate all visualizations from evaluation results."""
+    print("Starting visualization generation...")
+    
+    try:
+        # Load results
+        data = load_results()
+        
+        # Create figures directory
+        figures_dir = Path(__file__).parent.parent / "results/figures"
+        ensure_directory(figures_dir)
+        
+        # Generate model performance plots
+        if 'model_evaluations' in data:
+            print("Generating model performance plots...")
+            plot_model_performance(data['model_evaluations'], figures_dir)
+            plot_feature_performance(data['model_evaluations'], figures_dir)
+        
+        # Generate confusion matrices if detailed data exists
+        if 'feature_analysis' in data:
+            print("Generating confusion matrices...")
+            plot_confusion_matrices(data['feature_analysis'], figures_dir / "confusion_matrices")
+        
+        # Generate statistical significance plots if pairwise data exists
+        if 'pairwise' in data:
+            print("Generating statistical significance plots...")
+            plot_statistical_significance(data['pairwise'], figures_dir)
+        
+        # Create summary figure
+        print("Generating summary figure...")
+        create_summary_figure(
+            data.get('model_evaluations'),
+            data.get('feature_analysis'),
+            figures_dir
+        )
+        
+        print("Visualization generation complete. Plots saved in:", figures_dir)
+        
+    except FileNotFoundError as e:
+        print(f"Error: {e}")
+        print("Please run evaluation first to generate the necessary data files.")
+    except Exception as e:
+        print(f"Error generating visualizations: {e}")
+
 if __name__ == "__main__":
-    generate_all_visualizations()
+    main()

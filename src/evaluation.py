@@ -7,49 +7,37 @@ from sklearn.metrics import (confusion_matrix, f1_score, accuracy_score,
                             recall_score, roc_curve, auc)
 from statsmodels.stats.contingency_tables import mcnemar
 from scipy.stats import friedmanchisquare, wilcoxon
-import logging
 from pathlib import Path
 from config import LLM_MODELS
 
-logging.basicConfig(level=logging.INFO, 
-                    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-                    handlers=[logging.FileHandler("../logs/evaluation.log"),
-                              logging.StreamHandler()])
-logger = logging.getLogger(__name__)
-
 def load_data():
     """Load human-coded and model prediction data"""
-    try:
-        # Load human-coded data
-        data_dir = Path(__file__).parent.parent / "data"
-        results_dir = Path(__file__).parent.parent / "results"
+    # Load human-coded data
+    data_dir = Path(__file__).parent.parent / "data"
+    results_dir = Path(__file__).parent.parent / "results"
+    
+    human_data = pd.read_csv(data_dir / "human_coded.csv")
+    print(f"Loaded {len(human_data)} human-coded records")
+    
+    # Load each model's predictions
+    model_data = []
+    for model in LLM_MODELS:
+        model_file = results_dir / f"{model}_annotations.csv"
+        if model_file.exists():
+            df = pd.read_csv(model_file)
+            df['model'] = model  # Add model identifier
+            model_data.append(df)
+            print(f"Loaded {len(df)} predictions for {model}")
+        else:
+            print(f"No predictions file found for {model}")
+    
+    if not model_data:
+        raise FileNotFoundError("No model prediction files found")
         
-        human_data = pd.read_csv(data_dir / "human_coded.csv")
-        logger.info(f"Loaded {len(human_data)} human-coded records")
-        
-        # Load each model's predictions
-        model_data = []
-        for model in LLM_MODELS:
-            model_file = results_dir / f"{model}_predictions.csv"
-            if model_file.exists():
-                df = pd.read_csv(model_file)
-                df['model'] = model  # Add model identifier
-                model_data.append(df)
-                logger.info(f"Loaded {len(df)} predictions for {model}")
-            else:
-                logger.warning(f"No predictions file found for {model}")
-        
-        if not model_data:
-            raise FileNotFoundError("No model prediction files found")
-            
-        # Combine all model predictions
-        model_predictions = pd.concat(model_data, ignore_index=True)
-        
-        return human_data, model_predictions
-        
-    except Exception as e:
-        logger.error(f"Error loading data: {e}")
-        raise
+    # Combine all model predictions
+    model_predictions = pd.concat(model_data, ignore_index=True)
+    
+    return human_data, model_predictions
 
 def evaluate_model_predictions(human_data, model_predictions, model):
     """Evaluate predictions for a specific model"""
@@ -64,7 +52,7 @@ def evaluate_model_predictions(human_data, model_predictions, model):
     common_rituals = set(human_data['ritual_number']) & set(model_df['ritual_number'])
     
     if not common_rituals:
-        logger.warning(f"No common rituals found for {model}")
+        print(f"No common rituals found for {model}")
         return None
     
     # Filter to common rituals
@@ -90,7 +78,7 @@ def evaluate_model_predictions(human_data, model_predictions, model):
                 metrics = calculate_metrics(y_true, y_pred)
                 feature_metrics[feature] = metrics
             except Exception as e:
-                logger.error(f"Error calculating metrics for {feature}: {e}")
+                print(f"Error calculating metrics for {feature}: {e}")
     
     return feature_metrics
 
@@ -146,7 +134,7 @@ def mcnemar_test_feature(human, model):
         result = mcnemar(table, exact=True)
         return result.statistic, result.pvalue
     except Exception as e:
-        logger.warning(f"McNemar test failed: {e}. Attempting with correction.")
+        print(f"McNemar test failed: {e}. Attempting with correction.")
         # Apply correction if we have zeros in the table
         table = [[max(cell, 0.5) for cell in row] for row in table]
         result = mcnemar(table, exact=False, correction=True)
@@ -162,7 +150,7 @@ def statistical_tests(human_data, model_data):
     models = model_data["model"].unique()
     
     if len(models) < 2:
-        logger.info("Fewer than 2 models, skipping statistical tests")
+        print("Fewer than 2 models, skipping statistical tests")
         return None
     
     # Prepare data for statistical tests
@@ -214,7 +202,7 @@ def statistical_tests(human_data, model_data):
         
         return results
     else:
-        logger.warning("Insufficient data for statistical tests")
+        print("Insufficient data for statistical tests")
         return None
 
 def per_feature_analysis(human_data, model_data):
@@ -251,7 +239,7 @@ def per_feature_analysis(human_data, model_data):
                             fpr, tpr, _ = roc_curve(human_feature.loc[common_indices], model_feature)
                             roc_auc = auc(fpr, tpr)
                         except Exception as e:
-                            logger.warning(f"ROC calculation failed for {feature}, {model}: {e}")
+                            print(f"ROC calculation failed for {feature}, {model}: {e}")
                             roc_auc = None
                     else:
                         roc_auc = None
@@ -269,7 +257,7 @@ def per_feature_analysis(human_data, model_data):
                         "significant_difference": pval < 0.05
                     }
                 except Exception as e:
-                    logger.error(f"Error in per_feature_analysis for {feature}, {model}: {e}")
+                    print(f"Error in per_feature_analysis for {feature}, {model}: {e}")
         
         analysis_results[feature] = feature_results
     
@@ -288,18 +276,18 @@ def per_feature_analysis(human_data, model_data):
     return analysis_results
 
 def main():
+    # Create evaluation directory
+    eval_dir = Path(__file__).parent.parent / "evaluation"
+    eval_dir.mkdir(parents=True, exist_ok=True)
+    
     try:
         # Load data
         human_data, model_predictions = load_data()
         
-        # Create results directory
-        eval_dir = Path(__file__).parent.parent / "evaluation"
-        eval_dir.mkdir(parents=True, exist_ok=True)
-        
         # Evaluate each model
         all_results = {}
         for model in LLM_MODELS:
-            logger.info(f"Evaluating {model}...")
+            print(f"Evaluating {model}...")
             metrics = evaluate_model_predictions(human_data, model_predictions, model)
             if metrics:
                 all_results[model] = metrics
@@ -322,10 +310,10 @@ def main():
         summary_df = pd.DataFrame(summary_rows)
         summary_df.to_csv(eval_dir / "evaluation_summary.csv", index=False)
         
-        logger.info("Evaluation complete")
+        print("Evaluation complete")
         
     except Exception as e:
-        logger.error(f"Error in evaluation process: {e}", exc_info=True)
+        print(f"Error in evaluation process: {e}")
         raise
 
 if __name__ == "__main__":

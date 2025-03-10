@@ -72,15 +72,15 @@ def format_prompt(features, text_section):
             feature_str += f" (valid values: {feature['options']})"
         feature_list.append(feature_str)
     
-    return f"""Analyze this text and provide values for each feature. Use ONLY the specified valid values.
+    return f"""Analyse this text and provide values for each feature. Use ONLY the specified valid values.
 
-Features:
-{chr(10).join(feature_list)}
+    Features:
+    {chr(10).join(feature_list)}
 
-Text:
-{text_section}
+    Text:
+    {text_section}
 
-Respond with ONLY a JSON object containing feature names and values. For binary features (0,1), use exactly 0 or 1."""
+    Respond with ONLY a JSON object containing feature names and values. For binary features (0,1), use exactly 0 or 1."""
 
 def validate_and_normalise_output(result, features):
     """Validate and normalise LLM output."""
