@@ -1,6 +1,6 @@
 # Ethnographic Feature Extraction Using LLMs
 
-Can large language models (LLMs) can perform ethnographic feature extraction at a level comparable to human coders? Advanced NLP techniques are combined with transformer-based embeddings and multiple LLM APIs (e.g., GPT-4, Claude-2, Mistral-7B) to annotate sociocultural features in ethnographic texts.
+Can large language models (LLMs) perform ethnographic feature extraction at a level comparable to human coders? Advanced NLP techniques are combined with transformer-based embeddings and multiple LLM APIs (e.g., GPT-4, Claude-2, Mistral-7B) to annotate sociocultural features in ethnographic texts.
 
 ## Considerations:
 - LLM sampling (just single sample + bootstrap (perhaps temp=0); or multiple samples and take mode)?
