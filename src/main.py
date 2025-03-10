@@ -1,63 +1,174 @@
 import pandas as pd
 from pathlib import Path
-from llm_annotate import process_sections, aggregate_results
-from utils import get_feature_names
+from llm_annotate import process_ritual
+from config import LLM_MODELS
+import json
+from tqdm import tqdm
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import threading
+import time
+import os
+
+# Create a thread-safe lock for file writing
+file_lock = threading.Lock()
+
+def ensure_model_file(results_dir, model):
+    """Ensure model output file exists with correct structure"""
+    model_file = results_dir / f"{model}_predictions.csv"
+    if not model_file.exists():
+        # Create DataFrame with ritual_number as first column
+        df = pd.DataFrame(columns=['ritual_number'])
+        df.to_csv(model_file, index=False)
+        # Force write to disk
+        with open(model_file, 'a') as f:
+            f.flush()
+            os.fsync(f.fileno())
+    return model_file
+
+def process_and_save(row, model, results_dir):
+    """Process a single ritual and save results immediately"""
+    ritual_number = int(row['ritual_number'])
+    ritual_text = row['paragraph']
+    
+    # Get model output file
+    model_file = results_dir / f"{model}_predictions.csv"
+    
+    # Check if this ritual has already been processed
+    if model_file.exists():
+        existing_df = pd.read_csv(model_file)
+        if ritual_number in existing_df['ritual_number'].values:
+            return None
+    
+    result = process_ritual(ritual_number, ritual_text, model)
+    if result:
+        # Use lock when writing to ensure thread safety
+        with file_lock:
+            # Convert result to DataFrame
+            result_df = pd.DataFrame([result])
+            
+            # Ensure ritual_number is the first column
+            cols = ['ritual_number'] + [col for col in result_df.columns if col != 'ritual_number']
+            result_df = result_df[cols]
+            
+            if model_file.exists():
+                # Read existing file
+                existing_df = pd.read_csv(model_file)
+                
+                # Append new result
+                updated_df = pd.concat([existing_df, result_df], ignore_index=True)
+                
+                # Sort by ritual_number
+                updated_df = updated_df.sort_values('ritual_number')
+                
+                # Save back to file
+                updated_df.to_csv(model_file, index=False)
+            else:
+                # Create new file
+                result_df.to_csv(model_file, index=False)
+            
+            # Force write to disk
+            with open(model_file, 'a') as f:
+                f.flush()
+                os.fsync(f.fileno())
+            
+            # Also save individual JSON for debugging
+            json_file = results_dir / 'json' / f"ritual_{ritual_number}_{model}.json"
+            json_file.parent.mkdir(exist_ok=True)
+            with open(json_file, 'w') as f:
+                json.dump(result, f, indent=2)
+                f.flush()
+                os.fsync(f.fileno())
+        
+        return result
+    return None
 
 def main():
-    current_dir = Path(__file__).parent
-    data_dir = current_dir.parent / "data"
-    results_dir = current_dir.parent / "results"
+    # Set up paths
+    data_dir = Path(__file__).parent.parent / "data"
+    results_dir = Path(__file__).parent.parent / "results"
+    results_dir.mkdir(parents=True, exist_ok=True)
+    (results_dir / 'json').mkdir(exist_ok=True)  # Create subdirectory for JSON files
 
-    # Load ritual_texts.csv (expected structure: ritual_number, paragraph)
-    ritual_texts_path = data_dir / "ritual_texts.csv"
-    ritual_texts_df = pd.read_csv(ritual_texts_path)
+    # Load ritual texts
+    ritual_texts_df = pd.read_csv(data_dir / "ritual_texts.csv")
     
-    # (Since there's only one paragraph per ritual, grouping is optional.)
-    grouped = ritual_texts_df.groupby("ritual_number")["paragraph"].apply(lambda x: " ".join(x)).reset_index()
+    # Filter out empty paragraphs efficiently
+    valid_mask = ritual_texts_df['paragraph'].notna() & (ritual_texts_df['paragraph'].str.strip() != '')
+    valid_rituals = ritual_texts_df[valid_mask].copy()
+    skipped_rituals = ritual_texts_df[~valid_mask]['ritual_number'].tolist()
+    
+    # Print summary
+    print(f"Found {len(ritual_texts_df)} total rituals")
+    print(f"Skipping {len(skipped_rituals)} rituals with no text: {sorted(skipped_rituals)}")
+    print(f"Processing {len(valid_rituals)} rituals with text...")
 
-    # Get normalised feature names (to match those in the LLM outputs)
-    feature_names = get_feature_names()
-    normalised_feature_names = [name.strip().lower().replace(" ", "_") for name in feature_names]
-
-    nested_results = {}   # For the nested structure: ritual_number -> {llm_model: {feature: result}}
-    flat_rows = []        # For the flat CSV output (for evaluation)
-
-    for idx, row in grouped.iterrows():
-        ritual_number = row["ritual_number"]
-        ritual_text = row["paragraph"]
-        print(f"Processing ritual {ritual_number}...")
+    # Process one model at a time to better manage rate limits
+    for model in LLM_MODELS:
+        print(f"\nProcessing rituals with {model}...")
         
-        section_results = process_sections([ritual_text])
-        if section_results:
-            aggregated = aggregate_results(section_results)
-            nested_results[ritual_number] = aggregated
+        # Ensure model output file exists
+        model_file = ensure_model_file(results_dir, model)
+        
+        # Create tasks for this model
+        tasks = []
+        existing_rituals = set()
+        
+        # Check existing results
+        if model_file.exists():
+            existing_df = pd.read_csv(model_file)
+            existing_rituals = set(existing_df['ritual_number'].values)
+        
+        # Only process rituals that haven't been done yet
+        for _, row in valid_rituals.iterrows():
+            ritual_number = int(row['ritual_number'])
+            if ritual_number not in existing_rituals:
+                tasks.append(row)
+        
+        if not tasks:
+            print(f"All rituals already processed for {model}, skipping...")
+            continue
             
-            # Flatten: for each model, create a row with ritual, model, and each feature.
-            for model, features_dict in aggregated.items():
-                flat_row = {"ritual": ritual_number, "model": model}
-                for feat in normalised_feature_names:
-                    # features_dict[feat] is a list with a single value (if present)
-                    flat_row[feat] = features_dict.get(feat, [None])[0]
-                flat_rows.append(flat_row)
-        else:
-            print(f"No results generated for ritual {ritual_number}.")
+        print(f"Found {len(tasks)} rituals to process...")
+        
+        # Use fewer workers for rate-limited APIs
+        max_workers = 3 if model.startswith("gpt") else 5
+        
+        # Process rituals with limited concurrency
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            # Submit all tasks for this model
+            future_to_task = {
+                executor.submit(process_and_save, row, model, results_dir): row['ritual_number']
+                for row in tasks
+            }
+            
+            # Process results as they complete
+            completed = 0
+            with tqdm(total=len(tasks), desc=f"Processing {model}") as pbar:
+                for future in as_completed(future_to_task):
+                    ritual_number = future_to_task[future]
+                    try:
+                        result = future.result()
+                        if result:
+                            completed += 1
+                            print(f"\nCompleted ritual {ritual_number}")
+                    except Exception as e:
+                        print(f"\nError processing ritual {ritual_number}: {e}")
+                    pbar.update(1)
+                    
+            print(f"Completed {completed}/{len(tasks)} rituals for {model}")
+            
+            # Verify and sort the final CSV
+            if model_file.exists():
+                df = pd.read_csv(model_file)
+                df = df.sort_values('ritual_number')
+                df.to_csv(model_file, index=False)
+            
+            # Small delay between models to ensure clean rate limit reset
+            if not model == list(LLM_MODELS.keys())[-1]:
+                print("Waiting 60 seconds before processing next model...")
+                time.sleep(60)
 
-    if flat_rows:
-        flat_df = pd.DataFrame(flat_rows)
-        output_flat = data_dir / "model_predictions.csv"
-        flat_df.to_csv(output_flat, index=False)
-        print("Flat predictions saved to", output_flat)
-    else:
-        print("No flat predictions generated.")
-
-    if nested_results:
-        import json
-        output_nested = results_dir / "final_coded_ethnography.json"
-        with open(output_nested, "w") as f:
-            json.dump(nested_results, f, indent=4)
-        print("Nested results saved to", output_nested)
-    else:
-        print("No nested results generated.")
+    print(f"\nProcessing complete. Results saved to {results_dir}")
 
 if __name__ == "__main__":
     main()

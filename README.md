@@ -5,6 +5,16 @@ Can large language models (LLMs) perform ethnographic feature extraction at a le
 ## Considerations:
 - LLM sampling (just single sample + bootstrap (perhaps temp=0); or multiple samples and take mode)?
 
+## Data Format
+
+### ritual_features.csv
+The file should contain three columns:
+
+- `feature_name`: The name of the feature to be annotated
+- `feature_description`: A detailed description of the feature
+- `feature_options`: Valid options/values for this feature (e.g., "low, medium, high" or "0, 1" for binary features)
+
+
 ## Key Features
 
 - **Multi-model comparison**: Evaluates annotations from OpenAI, Anthropic, and Hugging Face models

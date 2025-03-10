@@ -1,156 +1,172 @@
-import openai
-import json
-import time
+from openai import OpenAI
 import requests
-import asyncio
 from config import LLM_MODELS
-from utils import load_ritual_features, format_prompt, repair_json, normalise_result
-import logging
+from utils import load_ritual_features, format_prompt, repair_json, validate_and_normalise_output
+import threading
+import time
+from datetime import datetime, timedelta
+import random
 
-# Setup logging
-logging.basicConfig(level=logging.INFO,
-                   format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
-
+# Load features once at module level
 RITUAL_FEATURES = load_ritual_features()
 
-def query_openai(text_section, model="gpt-4"):
-    """Queries OpenAI's GPT models (GPT-4, GPT-3.5)."""
-    api_key = LLM_MODELS[model]["api_key"]
-    prompt = format_prompt(RITUAL_FEATURES, text_section)
-    try:
-        openai.api_key = api_key
+# Thread-local storage for API clients and rate limiting
+thread_local = threading.local()
+
+# Global rate limit tracking
+class RateLimiter:
+    def __init__(self, tokens_per_min=10000, max_retries=5):
+        self.tokens_per_min = tokens_per_min
+        self.max_retries = max_retries
+        self.lock = threading.Lock()
+        self.last_reset = datetime.now()
+        self.tokens_used = 0
         
-        response = openai.ChatCompletion.create(
-            model=model,
-            messages=[{"role": "user", "content": prompt}],
-        )
-        content = response["choices"][0]["message"]["content"]
-        result = repair_json(content) or {}
-        return normalise_result(result) if result else None
-    except openai.error.RateLimitError:
-        logger.warning(f"Rate limit exceeded for {model}. Consider increasing backoff.")
-        raise
-    except openai.error.Timeout:
-        logger.warning(f"Request timed out for {model}")
-        raise
-    except openai.error.APIError as e:
-        logger.error(f"OpenAI API error: {e}")
-        raise
-    except Exception as e:
-        logger.error(f"Unexpected error querying {model}: {e}")
-        raise
+    def wait_if_needed(self, requested_tokens):
+        with self.lock:
+            now = datetime.now()
+            # Reset counter if a minute has passed
+            if now - self.last_reset >= timedelta(minutes=1):
+                self.tokens_used = 0
+                self.last_reset = now
+            
+            # Calculate wait time if we would exceed the limit
+            if self.tokens_used + requested_tokens > self.tokens_per_min:
+                wait_time = 60 - (now - self.last_reset).total_seconds()
+                return max(0, wait_time)
+            
+            self.tokens_used += requested_tokens
+            return 0
 
-def query_anthropic(text_section, model="claude-2"):
-    """Queries Claude-2 from Anthropic API."""
-    api_key = LLM_MODELS[model]["api_key"]
-    prompt = format_prompt(RITUAL_FEATURES, text_section)
-    headers = {"x-api-key": api_key, "Content-Type": "application/json"}
-    payload = {
-        "model": model,
-        "messages": [{"role": "user", "content": prompt}],
-        "max_tokens": 200
-    }
-    
+rate_limiter = RateLimiter()
+
+def get_openai_client(model):
+    """Get or create thread-local OpenAI client"""
+    if not hasattr(thread_local, "openai_client"):
+        thread_local.openai_client = OpenAI(api_key=LLM_MODELS[model]["api_key"])
+    return thread_local.openai_client
+
+def process_ritual(ritual_number, text, model):
+    """Process a single ritual text with specified model."""
     try:
-        response = requests.post("https://api.anthropic.com/v1/messages", headers=headers, json=payload)
-        content = response.json().get("content", [{}])[0].get("text", "")
-        result = repair_json(content) or {}
-        return normalise_result(result) if result else None
-    except requests.exceptions.Timeout:
-        logger.warning(f"Request timed out for {model}")
-        raise
-    except requests.exceptions.HTTPError as e:
-        if e.response.status_code == 429:
-            logger.warning(f"Rate limit exceeded for {model}")
+        if model.startswith("gpt"):
+            result = query_openai(text, model)
+        elif model.startswith("claude"):
+            result = query_anthropic(text, model)
+        elif model.startswith("mistral"):
+            result = query_huggingface(text, model)
         else:
-            logger.error(f"HTTP error from Anthropic API: {e}")
-        raise
+            print(f"Unknown model type: {model}")
+            return None
+
+        if result:
+            result['ritual_number'] = ritual_number
+        return result
     except Exception as e:
-        logger.error(f"Unexpected error querying {model}: {e}")
-        raise
+        print(f"Error processing ritual {ritual_number} with {model}: {e}")
+        return None
 
-def query_huggingface(text_section, model="mistral-7b"):
-    """Queries Mistral-7B or LLaMA via Hugging Face API."""
-    api_key = LLM_MODELS[model]["api_key"]
-    prompt = format_prompt(RITUAL_FEATURES, text_section)
-    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
-    payload = {"inputs": prompt, "parameters": {"max_new_tokens": 200}}
-    
-    model_path = model  # You might need to use a full path like "mistralai/Mistral-7B-Instruct-v0.1"
-    
-    try:
-        response = requests.post(f"https://api-inference.huggingface.co/models/{model_path}", headers=headers, json=payload)
-        response.raise_for_status()
-        content = response.json().get("generated_text", "")
-        result = repair_json(content) or {}
-        return normalise_result(result) if result else None
-    except requests.exceptions.Timeout:
-        logger.warning(f"Request timed out for {model}")
-        raise
-    except requests.exceptions.HTTPError as e:
-        if e.response.status_code == 429:
-            logger.warning(f"Rate limit exceeded for {model}")
-        else:
-            logger.error(f"HTTP error from Hugging Face API: {e}")
-        raise
-    except Exception as e:
-        logger.error(f"Unexpected error querying {model}: {e}")
-        raise
-
-# --- Asynchronous Query Wrapper with Retry and Dynamic Rate Limiting ---
-
-async def async_query(model, text_section, max_retries=3):
-    """
-    Asynchronously query an LLM with a retry mechanism and exponential backoff.
-    """
-    backoff_time = 2  # Initial backoff time in seconds
-    
+def query_openai_with_backoff(client, messages, model, max_retries=5):
+    """Query OpenAI API with exponential backoff for rate limits"""
+    base_delay = 1
     for attempt in range(max_retries):
         try:
-            if model.startswith("gpt"):
-                result = await asyncio.to_thread(query_openai, text_section, model)
-            elif model.startswith("claude"):
-                result = await asyncio.to_thread(query_anthropic, text_section, model)
-            else:
-                result = await asyncio.to_thread(query_huggingface, text_section, model)
-            if result is not None:
-                return model, result
-        except (openai.error.RateLimitError, requests.exceptions.HTTPError) as e:
-            if attempt < max_retries - 1:
-                wait_time = backoff_time * (2 ** attempt)
-                logger.warning(f"Rate limit/HTTP error for {model}. Waiting {wait_time}s before retry.")
-                await asyncio.sleep(wait_time)
-            else:
-                logger.error(f"Max retries exceeded for {model}")
-                return model, None
-        except (openai.error.Timeout, requests.exceptions.Timeout):
-            if attempt < max_retries - 1:
-                logger.warning(f"Timeout for {model}. Retrying...")
-                await asyncio.sleep(backoff_time)
-            else:
-                logger.error(f"Max retries exceeded for {model} due to timeouts")
-                return model, None
+            # Estimate token count (rough approximation)
+            estimated_tokens = sum(len(m["content"].split()) * 1.5 for m in messages)
+            
+            # Check rate limit before making request
+            wait_time = rate_limiter.wait_if_needed(estimated_tokens)
+            if wait_time > 0:
+                time.sleep(wait_time)
+            
+            response = client.chat.completions.create(
+                model=model,
+                messages=messages,
+                temperature=0.0
+            )
+            return response
+            
         except Exception as e:
-            logger.error(f"Unhandled error for {model}: {e}")
-            return model, None
-    return model, None
+            error_msg = str(e).lower()
+            if "rate limit" in error_msg:
+                if attempt < max_retries - 1:
+                    delay = (base_delay * (2 ** attempt)) + (random.random() * 0.1)
+                    print(f"Rate limit reached, waiting {delay:.2f}s before retry {attempt + 1}/{max_retries}")
+                    time.sleep(delay)
+                    continue
+            raise
 
-async def process_sections_async(sections):
-    """
-    Asynchronously process each section (ritual text) through each LLM model.
-    """
-    tasks = []
-    for i, section in enumerate(sections):
-        logger.info(f"Processing Section {i+1}/{len(sections)}...")
-        for model in LLM_MODELS.keys():
-            tasks.append(async_query(model, section))
-    responses = await asyncio.gather(*tasks)
-    results = {model: [] for model in LLM_MODELS.keys()}
-    for model, result in responses:
-        if result:
-            results[model].append(result)
-    return results
+def query_openai(text, model):
+    """Query OpenAI's GPT models with rate limiting and retries."""
+    try:
+        client = get_openai_client(model)
+        messages = [
+            {"role": "system", "content": "You are a coding assistant. Respond with ONLY a JSON object containing the requested feature values. For binary features, use exactly 0 or 1."},
+            {"role": "user", "content": format_prompt(RITUAL_FEATURES, text)}
+        ]
+        
+        response = query_openai_with_backoff(client, messages, model)
+        if response:
+            result = repair_json(response.choices[0].message.content)
+            return validate_and_normalise_output(result, RITUAL_FEATURES) if result else None
+    except Exception as e:
+        print(f"OpenAI API error: {e}")
+        return None
 
-def process_sections(sections):
-    return asyncio.run(process_sections_async(sections))
+def query_anthropic(text, model):
+    """Query Claude from Anthropic."""
+    try:
+        headers = {
+            "x-api-key": LLM_MODELS[model]["api_key"],
+            "Content-Type": "application/json"
+        }
+        payload = {
+            "model": model,
+            "messages": [{"role": "user", "content": format_prompt(RITUAL_FEATURES, text)}],
+            "max_tokens": 1000
+        }
+        
+        with requests.Session() as session:
+            response = session.post(
+                "https://api.anthropic.com/v1/messages",
+                headers=headers,
+                json=payload,
+                timeout=10
+            )
+            response.raise_for_status()
+            
+            content = response.json().get("content", [{}])[0].get("text", "")
+            result = repair_json(content)
+            return validate_and_normalise_output(result, RITUAL_FEATURES) if result else None
+    except Exception as e:
+        print(f"Anthropic API error: {e}")
+        return None
+
+def query_huggingface(text, model):
+    """Query models via Hugging Face."""
+    try:
+        headers = {
+            "Authorization": f"Bearer {LLM_MODELS[model]['api_key']}",
+            "Content-Type": "application/json"
+        }
+        payload = {
+            "inputs": format_prompt(RITUAL_FEATURES, text),
+            "parameters": {"max_new_tokens": 1000}
+        }
+        
+        with requests.Session() as session:
+            model_path = LLM_MODELS[model].get("model_path", model)
+            response = session.post(
+                f"https://api-inference.huggingface.co/models/{model_path}",
+                headers=headers,
+                json=payload,
+                timeout=10
+            )
+            response.raise_for_status()
+            
+            content = response.json().get("generated_text", "")
+            result = repair_json(content)
+            return validate_and_normalise_output(result, RITUAL_FEATURES) if result else None
+    except Exception as e:
+        print(f"HuggingFace API error: {e}")
+        return None

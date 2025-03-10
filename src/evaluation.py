@@ -8,6 +8,8 @@ from sklearn.metrics import (confusion_matrix, f1_score, accuracy_score,
 from statsmodels.stats.contingency_tables import mcnemar
 from scipy.stats import friedmanchisquare, wilcoxon
 import logging
+from pathlib import Path
+from config import LLM_MODELS
 
 logging.basicConfig(level=logging.INFO, 
                     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -18,69 +20,79 @@ logger = logging.getLogger(__name__)
 def load_data():
     """Load human-coded and model prediction data"""
     try:
-        human_data = pd.read_csv("../data/human_coded.csv")
-        model_data = pd.read_csv("../data/model_predictions.csv")
-        logger.info(f"Loaded data: {len(human_data)} human records, {len(model_data)} model predictions")
-        return human_data, model_data
+        # Load human-coded data
+        data_dir = Path(__file__).parent.parent / "data"
+        results_dir = Path(__file__).parent.parent / "results"
+        
+        human_data = pd.read_csv(data_dir / "human_coded.csv")
+        logger.info(f"Loaded {len(human_data)} human-coded records")
+        
+        # Load each model's predictions
+        model_data = []
+        for model in LLM_MODELS:
+            model_file = results_dir / f"{model}_predictions.csv"
+            if model_file.exists():
+                df = pd.read_csv(model_file)
+                df['model'] = model  # Add model identifier
+                model_data.append(df)
+                logger.info(f"Loaded {len(df)} predictions for {model}")
+            else:
+                logger.warning(f"No predictions file found for {model}")
+        
+        if not model_data:
+            raise FileNotFoundError("No model prediction files found")
+            
+        # Combine all model predictions
+        model_predictions = pd.concat(model_data, ignore_index=True)
+        
+        return human_data, model_predictions
+        
     except Exception as e:
         logger.error(f"Error loading data: {e}")
         raise
 
-def prediction_agreement(human_data, model_data):
-    """
-    Creates a binary correctness dataset (1 = correct, 0 = incorrect) for all features,
-    and computes overall metrics with confidence intervals using bootstrap.
-    """
-    feature_columns = human_data.columns.difference(["id", "ritual"])
-    models = model_data["model"].unique()
-    results = []
+def evaluate_model_predictions(human_data, model_predictions, model):
+    """Evaluate predictions for a specific model"""
+    # Get predictions for this model
+    model_df = model_predictions[model_predictions['model'] == model].copy()
     
-    # For storing per-feature metrics
-    feature_metrics = {model: {} for model in models}
+    # Ensure ritual_number is first column and both DataFrames are sorted
+    human_data = human_data.sort_values('ritual_number')
+    model_df = model_df.sort_values('ritual_number')
     
-    logger.info(f"Computing agreement metrics for {len(models)} models across {len(feature_columns)} features")
+    # Get common ritual numbers
+    common_rituals = set(human_data['ritual_number']) & set(model_df['ritual_number'])
     
-    for model in models:
-        model_subset = model_data[model_data["model"] == model].set_index("ritual")[feature_columns]
-        human_subset = human_data.set_index("ritual")[feature_columns]
-        
-        # Match indices to ensure we're comparing the same rituals
-        common_indices = human_subset.index.intersection(model_subset.index)
-        if len(common_indices) < len(human_subset):
-            logger.warning(f"Only {len(common_indices)}/{len(human_subset)} rituals found for model {model}")
-        
-        human_matched = human_subset.loc[common_indices]
-        model_matched = model_subset.loc[common_indices]
-        
-        # Overall correctness
-        correctness_df = (human_matched == model_matched).astype(int)
-        
-        # Calculate overall metrics
-        metrics = calculate_metrics(correctness_df.values.flatten(), np.ones(correctness_df.size))
-        metrics["model"] = model
-        results.append(metrics)
-        
-        # Per-feature metrics
-        for feature in feature_columns:
-            feature_correctness = correctness_df[feature].values
-            feature_metrics[model][feature] = calculate_metrics(
-                feature_correctness, 
-                np.ones(len(feature_correctness))
-            )
+    if not common_rituals:
+        logger.warning(f"No common rituals found for {model}")
+        return None
     
-    # Save per-feature metrics
-    feature_results = []
-    for model in models:
-        for feature, metrics in feature_metrics[model].items():
-            metrics["model"] = model
-            metrics["feature"] = feature
-            feature_results.append(metrics)
+    # Filter to common rituals
+    human_subset = human_data[human_data['ritual_number'].isin(common_rituals)]
+    model_subset = model_df[model_df['ritual_number'].isin(common_rituals)]
     
-    feature_df = pd.DataFrame(feature_results)
-    feature_df.to_csv("../results/per_feature_metrics.csv", index=False)
-    logger.info(f"Saved per-feature metrics for {len(models)} models")
+    # Sort both by ritual_number to ensure alignment
+    human_subset = human_subset.sort_values('ritual_number')
+    model_subset = model_subset.sort_values('ritual_number')
     
-    return pd.DataFrame(results)
+    # Get feature columns (excluding ritual_number and model)
+    feature_columns = [col for col in model_subset.columns 
+                      if col not in ['ritual_number', 'model']]
+    
+    # Calculate metrics for each feature
+    feature_metrics = {}
+    for feature in feature_columns:
+        if feature in human_subset.columns:
+            try:
+                y_true = human_subset[feature].values
+                y_pred = model_subset[feature].values
+                
+                metrics = calculate_metrics(y_true, y_pred)
+                feature_metrics[feature] = metrics
+            except Exception as e:
+                logger.error(f"Error calculating metrics for {feature}: {e}")
+    
+    return feature_metrics
 
 def calculate_metrics(y_true, y_pred, n_bootstrap=1000, confidence=0.95):
     """Calculate metrics with bootstrap confidence intervals"""
@@ -100,8 +112,8 @@ def calculate_metrics(y_true, y_pred, n_bootstrap=1000, confidence=0.95):
         
         for _ in range(n_bootstrap):
             bootstrap_indices = np.random.choice(indices, size=len(indices), replace=True)
-            bootstrap_true = np.array(y_true)[bootstrap_indices]
-            bootstrap_pred = np.array(y_pred)[bootstrap_indices]
+            bootstrap_true = y_true[bootstrap_indices]
+            bootstrap_pred = y_pred[bootstrap_indices]
             
             bootstrap_metrics["accuracy"].append(accuracy_score(bootstrap_true, bootstrap_pred))
             bootstrap_metrics["precision"].append(precision_score(bootstrap_true, bootstrap_pred, zero_division=0))
@@ -277,25 +289,41 @@ def per_feature_analysis(human_data, model_data):
 
 def main():
     try:
-        human_data, model_data = load_data()
-
-        logger.info("Computing prediction agreement metrics...")
-        prediction_agreement_metrics = prediction_agreement(human_data, model_data)
-        prediction_agreement_metrics.to_csv("../results/overall_prediction_agreement.csv", index=False)
+        # Load data
+        human_data, model_predictions = load_data()
         
-        logger.info("Performing statistical tests between models...")
-        stats_results = statistical_tests(human_data, model_data)
-        if stats_results:
-            with open("../results/statistical_tests.json", "w") as f:
-                import json
-                json.dump(stats_results, f, indent=4)
+        # Create results directory
+        eval_dir = Path(__file__).parent.parent / "evaluation"
+        eval_dir.mkdir(parents=True, exist_ok=True)
         
-        logger.info("Performing per-feature analysis...")
-        feature_analysis = per_feature_analysis(human_data, model_data)
+        # Evaluate each model
+        all_results = {}
+        for model in LLM_MODELS:
+            logger.info(f"Evaluating {model}...")
+            metrics = evaluate_model_predictions(human_data, model_predictions, model)
+            if metrics:
+                all_results[model] = metrics
+                
+                # Save model-specific results
+                model_results = pd.DataFrame.from_dict(metrics, orient='index')
+                model_results.to_csv(eval_dir / f"{model}_evaluation.csv")
         
-        logger.info("Evaluation complete.")
-        return prediction_agreement_metrics, feature_analysis, stats_results
-    
+        # Create summary DataFrame
+        summary_rows = []
+        for model, metrics in all_results.items():
+            for feature, feature_metrics in metrics.items():
+                row = {
+                    'model': model,
+                    'feature': feature,
+                    **feature_metrics
+                }
+                summary_rows.append(row)
+        
+        summary_df = pd.DataFrame(summary_rows)
+        summary_df.to_csv(eval_dir / "evaluation_summary.csv", index=False)
+        
+        logger.info("Evaluation complete")
+        
     except Exception as e:
         logger.error(f"Error in evaluation process: {e}", exc_info=True)
         raise
