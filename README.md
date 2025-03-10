@@ -84,7 +84,23 @@ The project generates several visualisations:
    ```
 
 2. **Configure API keys**:
-   Edit `src/config.py` to add your API keys for OpenAI, Anthropic, and Hugging Face.
+   Set the following environment variables with your API keys:
+   ```bash
+   # On Linux/Mac
+   export OPENAI_API_KEY="your-openai-key"
+   export ANTHROPIC_API_KEY="your-anthropic-key"
+   export HUGGINGFACE_API_KEY="your-huggingface-key"
+
+   # On Windows (Command Prompt)
+   set OPENAI_API_KEY=your-openai-key
+   set ANTHROPIC_API_KEY=your-anthropic-key
+   set HUGGINGFACE_API_KEY=your-huggingface-key
+
+   # On Windows (PowerShell)
+   $env:OPENAI_API_KEY="your-openai-key"
+   $env:ANTHROPIC_API_KEY="your-anthropic-key"
+   $env:HUGGINGFACE_API_KEY="your-huggingface-key"
+   ```
 
 3. **Prepare data**:
    - Place your ethnographic texts in `data/ritual_texts.csv`

@@ -1,6 +1,8 @@
-OPENAI_API_KEY = "sk-XXXXXXXX"
-ANTHROPIC_API_KEY = "sk-YYYYYYYY"
-HUGGINGFACE_API_KEY = "hf-XXXXXXXX"
+import os
+
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY") or ""
+ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY") or ""
+HUGGINGFACE_API_KEY = os.getenv("HUGGINGFACE_API_KEY") or ""
 
 LLM_MODELS = {
     "gpt-4": {"api_key": OPENAI_API_KEY, "provider": "openai"},
