@@ -135,16 +135,3 @@ The system implements robust error handling for API interactions:
 Potential enhancements to the project:
 - Implement multiple LLM runs per ritual to estimate model uncertainty
 - Implement active learning to improve model performance over time
-
-## Requirements
-
-- Python 3.8+
-- pandas
-- numpy
-- matplotlib
-- seaborn
-- scikit-learn
-- statsmodels
-- openai
-- requests
-- asyncio
