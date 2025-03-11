@@ -19,8 +19,8 @@ def main():
     # Filter out empty paragraphs
     valid_rituals = ritual_texts_df[ritual_texts_df['paragraph'].notna()].copy()
     
-    # TEMPORARY: Take only first 3 rituals for testing
-    valid_rituals = valid_rituals.head(3)
+    # TEMPORARY: Take only first 10 rituals for testing
+    valid_rituals = valid_rituals.head(10)
     print(f"Processing {len(valid_rituals)} rituals for testing")
     print(f"Ritual numbers: {sorted(valid_rituals['ritual_number'].tolist())}")
 

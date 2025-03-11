@@ -72,11 +72,33 @@ def evaluate_model_predictions(human_data, model_predictions, model):
     for feature in feature_columns:
         if feature in human_subset.columns:
             try:
+                # Get values and handle missing data
                 y_true = human_subset[feature].values
                 y_pred = model_subset[feature].values
                 
-                metrics = calculate_metrics(y_true, y_pred)
-                feature_metrics[feature] = metrics
+                # Handle missing values for both numeric and string data
+                valid_mask = np.ones(len(y_true), dtype=bool)
+                for i, (true_val, pred_val) in enumerate(zip(y_true, y_pred)):
+                    # Check for pandas NA, None, or empty string
+                    if pd.isna(true_val) or pd.isna(pred_val) or true_val == '' or pred_val == '':
+                        valid_mask[i] = False
+                
+                if not valid_mask.any():
+                    print(f"No valid predictions for feature {feature}")
+                    continue
+                    
+                y_true = y_true[valid_mask]
+                y_pred = y_pred[valid_mask]
+                
+                # Calculate metrics only if we have valid data
+                if len(y_true) > 0:
+                    metrics = calculate_metrics(y_true, y_pred)
+                    if metrics:
+                        metrics['n_samples'] = len(y_true)  # Add sample size info
+                        metrics['n_missing'] = sum(~valid_mask)  # Add count of missing values
+                        feature_metrics[feature] = metrics
+                else:
+                    print(f"No valid samples for feature {feature}")
             except Exception as e:
                 print(f"Error calculating metrics for {feature}: {e}")
     
@@ -84,39 +106,102 @@ def evaluate_model_predictions(human_data, model_predictions, model):
 
 def calculate_metrics(y_true, y_pred, n_bootstrap=1000, confidence=0.95):
     """Calculate metrics with bootstrap confidence intervals"""
-    metrics = {
-        "accuracy": accuracy_score(y_true, y_pred),
-        "precision": precision_score(y_true, y_pred, zero_division=0),
-        "recall": recall_score(y_true, y_pred, zero_division=0),
-        "f1": f1_score(y_true, y_pred, average="macro", zero_division=0),
-        "cohen_kappa": cohen_kappa_score(y_true, y_pred),
-        "mcc": matthews_corrcoef(y_true, y_pred)
-    }
+    # Try to convert to numeric, but keep as strings if not possible
+    try:
+        y_true_num = pd.to_numeric(y_true, errors='raise')
+        y_pred_num = pd.to_numeric(y_pred, errors='raise')
+        y_true = y_true_num
+        y_pred = y_pred_num
+        is_numeric = True
+    except:
+        is_numeric = False
     
-    # Bootstrap confidence intervals
-    if len(y_true) > 10:  # Only bootstrap if we have enough samples
-        bootstrap_metrics = {metric: [] for metric in metrics.keys()}
-        indices = np.arange(len(y_true))
+    # Get unique values
+    unique_true = np.unique(y_true)
+    unique_pred = np.unique(y_pred)
+    unique_labels = np.unique(np.concatenate([unique_true, unique_pred]))
+    is_binary = len(unique_labels) <= 2
+    
+    # Handle edge case where all samples are same class
+    if len(unique_true) == 1 and len(unique_pred) == 1 and unique_true[0] == unique_pred[0]:
+        if is_numeric:
+            return {
+                "accuracy": 1.0,
+                "precision": 1.0 if unique_true[0] == 1 else 0.0,
+                "recall": 1.0 if unique_true[0] == 1 else 0.0,
+                "f1": 1.0 if unique_true[0] == 1 else 0.0,
+                "cohen_kappa": 0.0,
+                "mcc": 0.0,
+                "roc_auc": None
+            }
+        else:
+            return {
+                "accuracy": 1.0,
+                "precision": None,  # Not meaningful for non-binary data
+                "recall": None,
+                "f1": None,
+                "cohen_kappa": 0.0,
+                "mcc": 0.0,
+                "roc_auc": None
+            }
+    
+    try:
+        # Calculate base metrics
+        metrics = {
+            "accuracy": accuracy_score(y_true, y_pred)
+        }
         
-        for _ in range(n_bootstrap):
-            bootstrap_indices = np.random.choice(indices, size=len(indices), replace=True)
-            bootstrap_true = y_true[bootstrap_indices]
-            bootstrap_pred = y_pred[bootstrap_indices]
+        # Only calculate these metrics if we have multiple classes and numeric data
+        if len(unique_true) > 1 and is_numeric:
+            metrics.update({
+                "precision": precision_score(y_true, y_pred, average='macro', zero_division=0),
+                "recall": recall_score(y_true, y_pred, average='macro', zero_division=0),
+                "f1": f1_score(y_true, y_pred, average='macro', zero_division=0),
+                "cohen_kappa": cohen_kappa_score(y_true, y_pred),
+                "mcc": matthews_corrcoef(y_true, y_pred)
+            })
+        else:
+            metrics.update({
+                "precision": None,
+                "recall": None,
+                "f1": None,
+                "cohen_kappa": cohen_kappa_score(y_true, y_pred) if len(unique_true) > 1 else 0.0,
+                "mcc": None
+            })
             
-            bootstrap_metrics["accuracy"].append(accuracy_score(bootstrap_true, bootstrap_pred))
-            bootstrap_metrics["precision"].append(precision_score(bootstrap_true, bootstrap_pred, zero_division=0))
-            bootstrap_metrics["recall"].append(recall_score(bootstrap_true, bootstrap_pred, zero_division=0))
-            bootstrap_metrics["f1"].append(f1_score(bootstrap_true, bootstrap_pred, average="macro", zero_division=0))
-            bootstrap_metrics["cohen_kappa"].append(cohen_kappa_score(bootstrap_true, bootstrap_pred))
-            bootstrap_metrics["mcc"].append(matthews_corrcoef(bootstrap_true, bootstrap_pred))
+        # Bootstrap confidence intervals if enough samples
+        if len(y_true) > 10 and len(unique_true) > 1:
+            bootstrap_metrics = {metric: [] for metric in metrics.keys()}
+            indices = np.arange(len(y_true))
+            
+            for _ in range(n_bootstrap):
+                bootstrap_indices = np.random.choice(indices, size=len(indices), replace=True)
+                bootstrap_true = y_true[bootstrap_indices]
+                bootstrap_pred = y_pred[bootstrap_indices]
+                
+                # Only calculate bootstrap if we have variation in the sample
+                if len(np.unique(bootstrap_true)) > 1:
+                    bootstrap_metrics["accuracy"].append(accuracy_score(bootstrap_true, bootstrap_pred))
+                    
+                    if is_numeric:
+                        bootstrap_metrics["precision"].append(precision_score(bootstrap_true, bootstrap_pred, average='macro', zero_division=0))
+                        bootstrap_metrics["recall"].append(recall_score(bootstrap_true, bootstrap_pred, average='macro', zero_division=0))
+                        bootstrap_metrics["f1"].append(f1_score(bootstrap_true, bootstrap_pred, average='macro', zero_division=0))
+                        bootstrap_metrics["cohen_kappa"].append(cohen_kappa_score(bootstrap_true, bootstrap_pred))
+                        bootstrap_metrics["mcc"].append(matthews_corrcoef(bootstrap_true, bootstrap_pred))
+            
+            # Calculate confidence intervals
+            alpha = (1 - confidence) / 2
+            for metric in metrics.keys():
+                if len(bootstrap_metrics.get(metric, [])) > 0:
+                    metrics[f"{metric}_lower"] = np.quantile(bootstrap_metrics[metric], alpha)
+                    metrics[f"{metric}_upper"] = np.quantile(bootstrap_metrics[metric], 1 - alpha)
         
-        # Calculate confidence intervals
-        alpha = (1 - confidence) / 2
-        for metric in metrics.keys():
-            metrics[f"{metric}_lower"] = np.quantile(bootstrap_metrics[metric], alpha)
-            metrics[f"{metric}_upper"] = np.quantile(bootstrap_metrics[metric], 1 - alpha)
-    
-    return metrics
+        return metrics
+        
+    except Exception as e:
+        print(f"Error calculating metrics: {e}")
+        return None
 
 def mcnemar_test_feature(human, model):
     """
@@ -292,23 +377,17 @@ def main():
             if metrics:
                 all_results[model] = metrics
                 
-                # Save model-specific results
-                model_results = pd.DataFrame.from_dict(metrics, orient='index')
-                model_results.to_csv(eval_dir / f"{model}_evaluation.csv")
-        
-        # Create summary DataFrame
-        summary_rows = []
-        for model, metrics in all_results.items():
-            for feature, feature_metrics in metrics.items():
-                row = {
-                    'model': model,
-                    'feature': feature,
-                    **feature_metrics
-                }
-                summary_rows.append(row)
-        
-        summary_df = pd.DataFrame(summary_rows)
-        summary_df.to_csv(eval_dir / "evaluation_summary.csv", index=False)
+                # Convert metrics to DataFrame format
+                model_results = []
+                for feature, feature_metrics in metrics.items():
+                    row = {'feature': feature}
+                    row.update(feature_metrics)
+                    model_results.append(row)
+                
+                model_results_df = pd.DataFrame(model_results)
+                
+                # Save model-specific results with confidence intervals
+                model_results_df.to_csv(eval_dir / f"{model}_evaluation.csv", index=False)
         
         print("Evaluation complete")
         

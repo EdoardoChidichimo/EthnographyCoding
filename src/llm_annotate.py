@@ -41,10 +41,11 @@ def process_ritual(ritual_number, text, model):
         max_retries = 3
         for attempt in range(max_retries):
             try:
+                
                 response = client.chat.completions.create(
                     model=model,
                     messages=messages,
-                    temperature=0.0
+                    seed=42  # Use seed for deterministic outputs
                 )
                 
                 result = response.choices[0].message.content

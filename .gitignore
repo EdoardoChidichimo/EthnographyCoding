@@ -4,6 +4,7 @@ src/create_ritual_texts_simple.py
 src/visualisation.py
 data/data.xlsx
 results/*
+evaluation/*
 
 # Python
 __pycache__/
