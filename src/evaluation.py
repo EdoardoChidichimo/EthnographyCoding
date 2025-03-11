@@ -360,6 +360,74 @@ def per_feature_analysis(human_data, model_data):
     
     return analysis_results
 
+def load_results():
+    """Load results from CSV files"""
+    base_path = Path(__file__).parent.parent
+    results_path = base_path / "results"
+    eval_path = base_path / "evaluation"
+    
+    files = {
+        "model_evaluations": [],  # Will hold individual model evaluation files
+        "summary": eval_path / "evaluation_summary.csv",
+        "feature_analysis": results_path / "feature_analysis_detailed.csv",
+        "pairwise": results_path / "pairwise_model_tests.csv"
+    }
+    
+    data = {}
+    
+    # Load model-specific evaluation files
+    from config import LLM_MODELS
+    for model in LLM_MODELS:
+        model_file = eval_path / f"{model}_evaluation.csv"
+        if model_file.exists():
+            df = pd.read_csv(model_file)
+            df['model'] = model
+            data.setdefault('model_evaluations', []).append(df)
+            print(f"Loaded evaluation data for {model}")
+    
+    # Combine model evaluations if any exist
+    if 'model_evaluations' in data and data['model_evaluations']:
+        data['model_evaluations'] = pd.concat(data['model_evaluations'], ignore_index=True)
+    
+    # Load other result files
+    for key, filepath in files.items():
+        if key != 'model_evaluations':  # Skip as we handled this above
+            if filepath.exists():
+                data[key] = pd.read_csv(filepath)
+                print(f"Loaded {key} data")
+            else:
+                print(f"Optional file not found: {filepath}")
+    
+    if not data:
+        raise FileNotFoundError("No evaluation results found")
+    
+    return data
+
+
+def final_evaluation():
+
+    data = load_results()
+        
+    results_dir = Path(__file__).parent.parent / "results"
+    
+    # Generate model performance plots if we have model evaluations
+    if 'model_evaluations' in data and not data['model_evaluations'].empty:
+        
+        # Calculate mean metrics and preserve confidence intervals
+        metrics = ['accuracy', 'precision', 'recall', 'f1', 'cohen_kappa', 'mcc']
+        agg_dict = {}
+        for metric in metrics:
+            agg_dict[metric] = 'mean'
+            if f"{metric}_lower" in data['model_evaluations'].columns:
+                agg_dict[f"{metric}_lower"] = 'mean'
+            if f"{metric}_upper" in data['model_evaluations'].columns:
+                agg_dict[f"{metric}_upper"] = 'mean'
+        
+        model_summary = data['model_evaluations'].groupby('model').agg(agg_dict).reset_index()
+
+        # Save model summary to CSV
+        model_summary.to_csv(results_dir / "final_aggregated_model_summary.csv", index=False)
+
 def main():
     # Create evaluation directory
     eval_dir = Path(__file__).parent.parent / "evaluation"
@@ -394,6 +462,8 @@ def main():
     except Exception as e:
         print(f"Error in evaluation process: {e}")
         raise
+
+    final_evaluation()
 
 if __name__ == "__main__":
     main()
