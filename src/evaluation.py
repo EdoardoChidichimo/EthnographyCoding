@@ -225,69 +225,138 @@ def mcnemar_test_feature(human, model):
         result = mcnemar(table, exact=False, correction=True)
         return result.statistic, result.pvalue
 
-def statistical_tests(human_data, model_data):
+def statistical_tests(human_data, model_predictions):
     """
     Performs statistical tests to compare models:
-    1. Friedman test to determine if there are significant differences
+    1. Friedman test to determine if there are significant differences across models
     2. Pairwise Wilcoxon signed-rank tests if Friedman test is significant
+    
+    Returns:
+        dict: Results of statistical tests including Friedman test and pairwise comparisons
     """
-    feature_columns = human_data.columns.difference(["id", "ritual"])
-    models = model_data["model"].unique()
+    # Get unique models
+    models = model_predictions['model'].unique()
     
     if len(models) < 2:
         print("Fewer than 2 models, skipping statistical tests")
         return None
     
     # Prepare data for statistical tests
-    model_accuracies = {model: [] for model in models}
+    model_metrics = {model: [] for model in models}
     
-    for feature in feature_columns:
-        human_feature = human_data.set_index("ritual")[feature]
+    # Get feature columns (excluding ritual_number and model)
+    feature_columns = [col for col in model_predictions.columns 
+                      if col not in ['ritual_number', 'model']]
+    
+    # Calculate accuracy for each feature and model
+    for model in models:
+        model_df = model_predictions[model_predictions['model'] == model]
         
-        for model in models:
-            model_subset = model_data[model_data["model"] == model].set_index("ritual")
-            common_indices = human_feature.index.intersection(model_subset.index)
+        # Get common ritual numbers for this model
+        common_rituals = set(human_data['ritual_number']) & set(model_df['ritual_number'])
+        
+        if not common_rituals:
+            print(f"No common rituals found for {model}")
+            continue
             
-            if len(common_indices) > 0:
-                model_feature = model_subset.loc[common_indices, feature]
-                accuracy = (human_feature.loc[common_indices] == model_feature).mean()
-                model_accuracies[model].append(accuracy)
+        # Filter to common rituals
+        human_subset = human_data[human_data['ritual_number'].isin(common_rituals)]
+        model_subset = model_df[model_df['ritual_number'].isin(common_rituals)]
+        
+        # Sort both by ritual_number to ensure alignment
+        human_subset = human_subset.sort_values('ritual_number')
+        model_subset = model_subset.sort_values('ritual_number')
+        
+        for feature in feature_columns:
+            if feature in human_subset.columns:
+                try:
+                    # Get values and handle missing data
+                    y_true = human_subset[feature].values
+                    y_pred = model_subset[feature].values
+                    
+                    # Handle missing values
+                    valid_mask = np.ones(len(y_true), dtype=bool)
+                    for i, (true_val, pred_val) in enumerate(zip(y_true, y_pred)):
+                        if pd.isna(true_val) or pd.isna(pred_val) or true_val == '' or pred_val == '':
+                            valid_mask[i] = False
+                    
+                    if valid_mask.any():
+                        y_true = y_true[valid_mask]
+                        y_pred = y_pred[valid_mask]
+                        
+                        if len(y_true) > 0:
+                            accuracy = accuracy_score(y_true, y_pred)
+                            model_metrics[model].append(accuracy)
+                            
+                except Exception as e:
+                    print(f"Error calculating accuracy for {feature}, {model}: {e}")
+                    continue
     
-    # Check if we have enough data
-    if all(len(accs) >= 5 for model, accs in model_accuracies.items()):
+    # Check if we have enough data (at least 5 features per model)
+    if not all(len(metrics) >= 5 for metrics in model_metrics.values()):
+        print("Insufficient data for statistical tests (need at least 5 features per model)")
+        return None
+    
+    # Ensure all models have the same number of features
+    min_features = min(len(metrics) for metrics in model_metrics.values())
+    model_metrics = {model: metrics[:min_features] for model, metrics in model_metrics.items()}
+    
+    try:
         # Friedman test
-        friedman_data = [model_accuracies[model] for model in models]
-        stat, p_value = friedmanchisquare(*friedman_data)
+        friedman_data = [model_metrics[model] for model in models]
+        friedman_stat, friedman_p = friedmanchisquare(*friedman_data)
         
         results = {
-            "friedman_statistic": stat,
-            "friedman_p_value": p_value,
-            "significant_difference": p_value < 0.05
+            "friedman_statistic": friedman_stat,
+            "friedman_p_value": friedman_p,
+            "significant_difference": friedman_p < 0.05,
+            "n_features_compared": min_features,
+            "n_models": len(models)
         }
         
         # If Friedman test is significant, perform pairwise Wilcoxon tests
-        if p_value < 0.05 and len(models) > 1:
+        if friedman_p < 0.05 and len(models) > 1:
             pairwise_results = []
+            
+            # Calculate Bonferroni correction
+            n_comparisons = (len(models) * (len(models) - 1)) // 2
+            alpha_corrected = 0.05 / n_comparisons
             
             for i, model1 in enumerate(models):
                 for model2 in models[i+1:]:
-                    stat, p_val = wilcoxon(model_accuracies[model1], model_accuracies[model2])
-                    pairwise_results.append({
-                        "model1": model1,
-                        "model2": model2,
-                        "wilcoxon_statistic": stat,
-                        "wilcoxon_p_value": p_val,
-                        "significant_difference": p_val < 0.05 / (len(models) * (len(models) - 1) / 2)  # Bonferroni correction
-                    })
+                    try:
+                        stat, p_val = wilcoxon(model_metrics[model1], 
+                                             model_metrics[model2],
+                                             alternative='two-sided')
+                        
+                        pairwise_results.append({
+                            "model1": model1,
+                            "model2": model2,
+                            "wilcoxon_statistic": stat,
+                            "wilcoxon_p_value": p_val,
+                            "significant_difference": p_val < alpha_corrected,
+                            "mean_diff": np.mean(model_metrics[model1]) - np.mean(model_metrics[model2])
+                        })
+                    except Exception as e:
+                        print(f"Error in Wilcoxon test for {model1} vs {model2}: {e}")
+                        continue
             
-            results["pairwise_tests"] = pairwise_results
+            if pairwise_results:
+                results["pairwise_tests"] = pairwise_results
+                # Save pairwise results
+                pd.DataFrame(pairwise_results).to_csv(
+                    Path(__file__).parent.parent / "results" / "pairwise_model_tests.csv", 
+                    index=False
+                )
+            else:
+                print("No significant differences found between models")
+        else:
+            print("Friedman test not significant, no pairwise comparisons performed")
             
-            # Save pairwise results
-            pd.DataFrame(pairwise_results).to_csv("../results/pairwise_model_tests.csv", index=False)
-        
         return results
-    else:
-        print("Insufficient data for statistical tests")
+    
+    except Exception as e:
+        print(f"Error in statistical tests: {e}")
         return None
 
 def per_feature_analysis(human_data, model_data):
@@ -437,26 +506,48 @@ def main():
         # Load data
         human_data, model_predictions = load_data()
         
-        # Evaluate each model
-        all_results = {}
+        # Evaluate each model and collect results for summary
+        all_results = []
         for model in LLM_MODELS:
             print(f"Evaluating {model}...")
             metrics = evaluate_model_predictions(human_data, model_predictions, model)
             if metrics:
-                all_results[model] = metrics
-                
                 # Convert metrics to DataFrame format
-                model_results = []
                 for feature, feature_metrics in metrics.items():
-                    row = {'feature': feature}
-                    row.update(feature_metrics)
-                    model_results.append(row)
+                    row = {
+                        'model': model,
+                        'feature': feature,
+                        'accuracy': feature_metrics.get('accuracy'),
+                        'precision': feature_metrics.get('precision'),
+                        'recall': feature_metrics.get('recall'),
+                        'f1': feature_metrics.get('f1'),
+                        'cohen_kappa': feature_metrics.get('cohen_kappa'),
+                        'mcc': feature_metrics.get('mcc'),
+                        'roc_auc': feature_metrics.get('roc_auc'),
+                        'n_samples': feature_metrics.get('n_samples'),
+                        'n_missing': feature_metrics.get('n_missing')
+                    }
+                    all_results.append(row)
                 
-                model_results_df = pd.DataFrame(model_results)
-                
-                # Save model-specific results with confidence intervals
+                # Save individual model results with confidence intervals
+                model_results_df = pd.DataFrame([
+                    {'feature': feature, **feature_metrics}
+                    for feature, feature_metrics in metrics.items()
+                ])
                 model_results_df.to_csv(eval_dir / f"{model}_evaluation.csv", index=False)
         
+        # Create and save evaluation summary
+        if all_results:
+            summary_df = pd.DataFrame(all_results)
+            summary_df = summary_df[[
+                'model', 'feature', 'accuracy', 'precision', 'recall', 'f1',
+                'cohen_kappa', 'mcc', 'roc_auc', 'n_samples', 'n_missing'
+            ]]
+            summary_df.to_csv(eval_dir / "evaluation_summary.csv", index=False)
+        
+        # Perform statistical tests
+        statistical_tests(human_data, model_predictions)
+
         print("Evaluation complete")
         
     except Exception as e:

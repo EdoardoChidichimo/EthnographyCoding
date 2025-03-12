@@ -21,7 +21,6 @@ The file should contain three columns:
 - **Comprehensive evaluation**: Calculates accuracy, precision, recall, F1 score, Cohen's Kappa, and Matthews Correlation Coefficient
 - **Statistical significance testing**: Uses Friedman and Wilcoxon signed-rank tests to determine if performance differences between models are statistically significant
 - **Robust error handling**: Implements retry mechanisms with exponential backoff for API rate limits and timeouts
-- **Detailed visualisations**: Generates performance heatmaps, confusion matrices, and statistical significance matrices
 
 ## Project Structure
 
@@ -32,9 +31,6 @@ The file should contain three columns:
 │   ├── human_coded.csv          # Human annotations (ground truth)
 │   └── model_predictions.csv    # Generated model predictions
 ├── results/
-│   ├── figures/                 # Generated visualisations
-│   ├── final_coded_ethnography.json # Nested results structure
-│   ├── overall_prediction_agreement.csv # Overall model performance metrics
 │   ├── per_feature_metrics.csv  # Performance metrics by feature
 │   ├── feature_analysis_detailed.csv # Detailed feature analysis with confusion matrices
 │   ├── pairwise_model_tests.csv # Statistical comparisons between model pairs
@@ -63,7 +59,6 @@ The file should contain three columns:
 4. **Result Aggregation**: Results are aggregated and normalised
 5. **Evaluation**: Model predictions are compared against human annotations
 6. **Statistical Analysis**: Performance differences are tested for statistical significance
-7. **Visualisation**: Results are visualised through various plots and figures
 
 ## Statistical Analysis
 
@@ -75,16 +70,6 @@ The project implements several statistical analyses:
 - **Wilcoxon Signed-Rank Test**: Pairwise comparison of models with Bonferroni correction
 - **McNemar's Test**: Evaluates whether models differ in their error patterns
 - **ROC Curve Analysis**: For binary features, evaluates true positive vs. false positive rates
-
-## Visualisations
-
-The project generates several visualisations:
-
-- **Model Performance Comparison**: Bar charts with error bars showing performance across metrics
-- **Feature Performance Heatmap**: Shows which models perform best on which features
-- **Confusion Matrices**: For each model-feature combination
-- **Statistical Significance Matrix**: Shows which model differences are statistically significant
-- **Summary Figure**: Comprehensive overview of key findings
 
 ## Setup and Usage
 
@@ -125,11 +110,6 @@ The project generates several visualisations:
 5. **Evaluate model performance**:
    ```
    python src/evaluation.py
-   ```
-
-6. **Generate visualisations**:
-   ```
-   python src/vis.py
    ```
 
 ## Error Handling
