@@ -36,8 +36,10 @@ The file should contain at least 2 columns:
 ├── src/
 │   ├── main.py                  # Main script to run the annotation pipeline
 │   ├── llm_annotate.py          # LLM API interaction and annotation logic
+│   ├── llm_client.py            # Unified client for multiple LLM providers
 │   ├── batch_processing.py      # Send batch to API
 │   ├── evaluation.py            # Statistical evaluation of model performance
+│   ├── cost_estimator.py        # Generate estimations of cost for each model
 │   ├── config.py                # API keys and model configuration
 │   └── utils.py                 # Utility functions for data processing
 └── requirements.txt             # Project dependencies
@@ -102,17 +104,3 @@ The project implements several statistical analyses:
    ```
    python src/evaluation.py
    ```
-
-## Error Handling
-
-The system implements robust error handling for API interactions:
-- Rate limit detection with exponential backoff
-- Timeout handling with retries
-- JSON parsing error recovery
-- Comprehensive logging
-
-## Future Improvements
-
-Potential enhancements to the project:
-- Implement multiple LLM runs per ethnography to estimate model uncertainty
-- Implement active learning to improve model performance over time
