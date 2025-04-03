@@ -2,65 +2,56 @@
 
 Can large language models (LLMs) perform ethnographic feature extraction at a level comparable to human coders? 
 
-## Considerations:
-- LLM sampling (just single sample + bootstrap (perhaps temp=0); or multiple samples and take mode)?
-
 ## Data Format
 
-### ritual_features.csv
+### ethnography_texts.csv
+The file should contain two columns:
+
+- `ethnography_number`: Index
+- `paragraph`: Ethnographic text
+
+### features.csv
 The file should contain three columns:
 
 - `feature_name`: The name of the feature to be annotated
 - `feature_description`: A detailed description of the feature
 - `feature_options`: Valid options/values for this feature (e.g., "low, medium, high" or "0, 1" for binary features)
 
+### human_coded.csv
+The file should contain at least 2 columns:
 
-## Key Features
-
-- **Multi-model comparison**: Evaluates annotations from OpenAI, Anthropic, and Hugging Face models
-- **Comprehensive evaluation**: Calculates accuracy, precision, recall, F1 score, Cohen's Kappa, and Matthews Correlation Coefficient
-- **Statistical significance testing**: Uses Friedman and Wilcoxon signed-rank tests to determine if performance differences between models are statistically significant
-- **Robust error handling**: Implements retry mechanisms with exponential backoff for API rate limits and timeouts
+- `ethnography_number`: Index
+- All feature names
 
 ## Project Structure
 
 ```
 ├── data/
-│   ├── ritual_texts.csv         # Source ethnographic texts with ritual_number and paragraph
-│   ├── ritual_features.csv      # Features to be annotated with descriptions
-│   ├── human_coded.csv          # Human annotations (ground truth)
-│   └── model_predictions.csv    # Generated model predictions
+│   ├── ethnographic_texts.csv   # Source ethnographic texts with ethnography_number and paragraph
+│   ├── features.csv             # Features to be annotated with descriptions
+│   └── human_coded.csv          # Human annotations (ground truth)
 ├── results/
-│   ├── per_feature_metrics.csv  # Performance metrics by feature
-│   ├── feature_analysis_detailed.csv # Detailed feature analysis with confusion matrices
-│   ├── pairwise_model_tests.csv # Statistical comparisons between model pairs
-│   └── statistical_tests.json   # Results of statistical significance tests
-├── logs/
-│   ├── evaluation.log           # Logs from the evaluation process
-│   └── visualization.log        # Logs from the visualisation process
+│   ├── {model}_annotations.csv  # LLM annotations
+│   ├── {model}_logprobs.json    # LLM "certainty" measure for each response
 ├── src/
 │   ├── main.py                  # Main script to run the annotation pipeline
-│   ├── config.py                # API keys and model configuration
 │   ├── llm_annotate.py          # LLM API interaction and annotation logic
-│   ├── utils.py                 # Utility functions for data processing
+│   ├── batch_processing.py      # Send batch to API
 │   ├── evaluation.py            # Statistical evaluation of model performance
-│   ├── vis.py                   # Visualisation of results
-│   ├── visualisation.py         # Additional visualisation utilities
-│   ├── topic_modelling.py       # Topic modelling for ritual texts
-│   └── extract_text.py          # Text extraction utilities
+│   ├── config.py                # API keys and model configuration
+│   └── utils.py                 # Utility functions for data processing
 └── requirements.txt             # Project dependencies
 ```
 
 ## Workflow
 
-1. **Data Loading**: Ethnographic texts are loaded from `ritual_texts.csv`
-2. **Feature Definition**: Ritual features are loaded from `ritual_features.csv`
+1. **Data Loading**: Ethnographic texts are loaded from `ethnography_texts.csv`
+2. **Feature Definition**: ethnography features are loaded from `features.csv`
 3. **LLM Annotation**: Each text is processed by multiple LLM models
-4. **Result Aggregation**: Results are aggregated and normalised
-5. **Evaluation**: Model predictions are compared against human annotations
-6. **Statistical Analysis**: Performance differences are tested for statistical significance
+4. **(Un)certainty Estimates**: Using OpenAI's logprobs, certainty estimates are given
+5. **Evaluation**: Model predictions are compared against human annotations (if provided)
 
-## Statistical Analysis
+<!-- ## Statistical Analysis
 
 The project implements several statistical analyses:
 
@@ -69,7 +60,7 @@ The project implements several statistical analyses:
 - **Friedman Test**: Non-parametric test to detect differences across multiple models
 - **Wilcoxon Signed-Rank Test**: Pairwise comparison of models with Bonferroni correction
 - **McNemar's Test**: Evaluates whether models differ in their error patterns
-- **ROC Curve Analysis**: For binary features, evaluates true positive vs. false positive rates
+- **ROC Curve Analysis**: For binary features, evaluates true positive vs. false positive rates -->
 
 ## Setup and Usage
 
@@ -98,8 +89,8 @@ The project implements several statistical analyses:
    ```
 
 3. **Prepare data**:
-   - Place your ethnographic texts in `data/ritual_texts.csv`
-   - Define ritual features in `data/ritual_features.csv`
+   - Place your ethnographic texts in `data/ethnography_texts.csv`
+   - Define features in `data/features.csv`
    - Add human annotations in `data/human_coded.csv`
 
 4. **Run the annotation pipeline**:
@@ -123,5 +114,5 @@ The system implements robust error handling for API interactions:
 ## Future Improvements
 
 Potential enhancements to the project:
-- Implement multiple LLM runs per ritual to estimate model uncertainty
+- Implement multiple LLM runs per ethnography to estimate model uncertainty
 - Implement active learning to improve model performance over time

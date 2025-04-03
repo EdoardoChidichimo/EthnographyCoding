@@ -44,28 +44,28 @@ def evaluate_model_predictions(human_data, model_predictions, model):
     # Get predictions for this model
     model_df = model_predictions[model_predictions['model'] == model].copy()
     
-    # Ensure ritual_number is first column and both DataFrames are sorted
-    human_data = human_data.sort_values('ritual_number')
-    model_df = model_df.sort_values('ritual_number')
+    # Ensure ethnography_number is first column and both DataFrames are sorted
+    human_data = human_data.sort_values('ethnography_number')
+    model_df = model_df.sort_values('ethnography_number')
     
-    # Get common ritual numbers
-    common_rituals = set(human_data['ritual_number']) & set(model_df['ritual_number'])
+    # Get common ethnography numbers
+    common_ethnographies = set(human_data['ethnography_number']) & set(model_df['ethnography_number'])
     
-    if not common_rituals:
-        print(f"No common rituals found for {model}")
+    if not common_ethnographies:
+        print(f"No common ethnographies found for {model}")
         return None
     
-    # Filter to common rituals
-    human_subset = human_data[human_data['ritual_number'].isin(common_rituals)]
-    model_subset = model_df[model_df['ritual_number'].isin(common_rituals)]
+    # Filter to common ethnographies
+    human_subset = human_data[human_data['ethnography_number'].isin(common_ethnographies)]
+    model_subset = model_df[model_df['ethnography_number'].isin(common_ethnographies)]
     
-    # Sort both by ritual_number to ensure alignment
-    human_subset = human_subset.sort_values('ritual_number')
-    model_subset = model_subset.sort_values('ritual_number')
+    # Sort both by ethnography_number to ensure alignment
+    human_subset = human_subset.sort_values('ethnography_number')
+    model_subset = model_subset.sort_values('ethnography_number')
     
-    # Get feature columns (excluding ritual_number and model)
+    # Get feature columns (excluding ethnography_number and model)
     feature_columns = [col for col in model_subset.columns 
-                      if col not in ['ritual_number', 'model']]
+                      if col not in ['ethnography_number', 'model']]
     
     # Calculate metrics for each feature
     feature_metrics = {}
@@ -244,28 +244,28 @@ def statistical_tests(human_data, model_predictions):
     # Prepare data for statistical tests
     model_metrics = {model: [] for model in models}
     
-    # Get feature columns (excluding ritual_number and model)
+    # Get feature columns (excluding ethnography_number and model)
     feature_columns = [col for col in model_predictions.columns 
-                      if col not in ['ritual_number', 'model']]
+                      if col not in ['ethnography_number', 'model']]
     
     # Calculate accuracy for each feature and model
     for model in models:
         model_df = model_predictions[model_predictions['model'] == model]
         
-        # Get common ritual numbers for this model
-        common_rituals = set(human_data['ritual_number']) & set(model_df['ritual_number'])
+        # Get common ethnography numbers for this model
+        common_ethnographies = set(human_data['ethnography_number']) & set(model_df['ethnography_number'])
         
-        if not common_rituals:
-            print(f"No common rituals found for {model}")
+        if not common_ethnographies:
+            print(f"No common ethnographies found for {model}")
             continue
             
-        # Filter to common rituals
-        human_subset = human_data[human_data['ritual_number'].isin(common_rituals)]
-        model_subset = model_df[model_df['ritual_number'].isin(common_rituals)]
+        # Filter to common ethnographies
+        human_subset = human_data[human_data['ethnography_number'].isin(common_ethnographies)]
+        model_subset = model_df[model_df['ethnography_number'].isin(common_ethnographies)]
         
-        # Sort both by ritual_number to ensure alignment
-        human_subset = human_subset.sort_values('ritual_number')
-        model_subset = model_subset.sort_values('ritual_number')
+        # Sort both by ethnography_number to ensure alignment
+        human_subset = human_subset.sort_values('ethnography_number')
+        model_subset = model_subset.sort_values('ethnography_number')
         
         for feature in feature_columns:
             if feature in human_subset.columns:
@@ -364,16 +364,16 @@ def per_feature_analysis(human_data, model_data):
     Computes confusion matrices and McNemar's test for each feature.
     Returns a dictionary with feature names as keys and results as values.
     """
-    feature_columns = human_data.columns.difference(["id", "ritual"])
+    feature_columns = human_data.columns.difference(["id", "ethnography"])
     models = model_data["model"].unique()
     analysis_results = {}
     
     for feature in feature_columns:
-        human_feature = human_data.set_index("ritual")[feature]
+        human_feature = human_data.set_index("ethnography")[feature]
         feature_results = {}
         
         for model in models:
-            model_subset = model_data[model_data["model"] == model].set_index("ritual")
+            model_subset = model_data[model_data["model"] == model].set_index("ethnography")
             common_indices = human_feature.index.intersection(model_subset.index)
             
             if len(common_indices) > 0:

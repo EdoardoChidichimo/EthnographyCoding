@@ -1,69 +1,51 @@
-from openai import OpenAI
-from config import LLM_MODELS
-import time
 import pandas as pd
-from pathlib import Path
+from config import LLM_MODELS, create_prompt
+from utils import load_features
+from llm_client import get_llm_client
 
-def load_features():
-    """Load feature descriptions and options from CSV"""
-    features_path = Path(__file__).parent.parent / "data" / "ritual_features.csv"
-    return pd.read_csv(features_path)
-
-def process_ritual(ritual_number, text, model):
-    """Process a single ritual text with specified model."""
-    client = OpenAI(api_key=LLM_MODELS[model]["api_key"])
+def process_ethnography(ethnography_number, text, model):
+    """Process a single ethnography text with specified model."""
+    # Get the LLM client for this model
+    client = get_llm_client(model, LLM_MODELS)
     
-    # Load features once
     features_df = load_features()
     
-    # Create feature description string
-    feature_descriptions = []
+    result_dict = {'ethnography_number': ethnography_number}
+    logprobs_dict = {}  
+
     for _, row in features_df.iterrows():
-        desc = f"{row['feature_name']}: {row['feature_description']}"
-        if pd.notna(row['feature_options']):
-            desc += f" [Valid values: {row['feature_options']}]"
-        feature_descriptions.append(desc)
-    
-    try:
-        messages = [
-            {"role": "system", "content": "You are an expert in sociocultural anthropology. Respond with ONLY a JSON object containing feature annotations. For binary features, use exactly 0 or 1. For other features, use only the specified valid values."},
-            {"role": "user", "content": f"""Analyse this ritual text and provide annotations for each feature.
-
-            Features to annotate:
-            {chr(10).join(feature_descriptions)}
-
-            Text to analyse:
-            {text}
-
-            Respond with ONLY a JSON object where keys are feature names and values are your annotations. Use exactly 0 or 1 for binary features."""}
-        ]
+        feature_name = row['feature_name']
+        feature_description = row['feature_description']
+        feature_options = row['feature_options'] if pd.notna(row['feature_options']) else ""
         
-        max_retries = 3
-        for attempt in range(max_retries):
-            try:
+        # Create prompt for each feature
+        prompt = create_prompt(text, feature_name, feature_description, feature_options)
+        
+        try:
+            # Use the common client interface to generate responses
+            response = client.generate(
+                prompt=prompt,
+                system_prompt="You are an expert in sociocultural anthropology. Respond with ONLY a numerical value for the feature annotation.",
+                seed=42,
+                get_logprobs=True,
+                temperature=0.0,
+                max_tokens=10
+            )
+            
+            # Extract response text and logprobs
+            result = response["text"].strip()
+            
+            # Store logprobs if available
+            if "logprobs" in response:
+                logprobs_dict[feature_name] = response["logprobs"]
+            
+            # Directly parse the result as a numerical value
+            result_dict[feature_name] = float(result) if result.isdigit() else None
                 
-                response = client.chat.completions.create(
-                    model=model,
-                    messages=messages,
-                    seed=42  # Use seed for deterministic outputs
-                )
-                
-                result = response.choices[0].message.content
-                # Clean up the result if needed (remove any non-JSON text)
-                if "{" in result and "}" in result:
-                    result = result[result.find("{"):result.rfind("}") + 1]
-                
-                import json
-                result_dict = json.loads(result)
-                result_dict['ritual_number'] = ritual_number
-                return result_dict
-                
-            except Exception as e:
-                if "rate limit" in str(e).lower() and attempt < max_retries - 1:
-                    time.sleep(20 * (attempt + 1))  # Exponential backoff
-                    continue
-                raise
-                
-    except Exception as e:
-        print(f"Error processing ritual {ritual_number}: {e}")
-        return None
+        except Exception as e:
+            print(f"Error processing feature {feature_name} for ethnography {ethnography_number}: {e}")
+            result_dict[feature_name] = None
+
+    result_dict['logprobs'] = logprobs_dict
+    
+    return result_dict

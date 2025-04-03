@@ -2,8 +2,10 @@
 src/create_ritual_texts.py
 src/create_ritual_texts_simple.py
 data/data.xlsx
+data/batch_tasks_*.jsonl
 results/*
 evaluation/*
+figures
 
 # Python
 __pycache__/
