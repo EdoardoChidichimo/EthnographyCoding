@@ -2,14 +2,12 @@ import json
 from openai import OpenAI
 import pandas as pd
 from pathlib import Path
-from config import create_prompt, LLM_MODELS
+from config import create_prompt, LLM_MODELS, MAX_REQUESTS_PER_BATCH
 
 client = OpenAI(api_key=LLM_MODELS['gpt-4o-mini']['api_key'])
 
 ethnography_texts_df = pd.read_csv(Path(__file__).parent.parent / "data" / "ethnography_texts.csv")
 features_df = pd.read_csv(Path(__file__).parent.parent / "data" / "features.csv")
-
-MAX_REQUESTS_PER_BATCH = 50000
 
 batch_tasks = []
 

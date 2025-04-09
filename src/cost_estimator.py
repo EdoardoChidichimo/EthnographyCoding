@@ -23,12 +23,12 @@ PRICING = {
     "claude3-opus": {"input": 15/1_000_000, "output": 75/1_000_000},
 }
 
-def estimate_cost(ethnography_texts, features_df):
+def estimate_cost(ethnographic_texts, features_df):
     """
     Estimate the cost of running the experiment based on token usage.
     
     Parameters:
-    - ethnography_texts: List of ethnography texts to process
+    - ethnographic_texts: List of ethnography texts to process
     - features_df: DataFrame containing feature descriptions
     
     Returns:
@@ -40,7 +40,7 @@ def estimate_cost(ethnography_texts, features_df):
     total_output_tokens = 0
     
     # Calculate total tokens
-    for text in ethnography_texts:
+    for text in ethnographic_texts:
         for _, row in features_df.iterrows():
             feature_name = row['feature_name']
             feature_description = row['feature_description']
@@ -70,14 +70,14 @@ def estimate_cost(ethnography_texts, features_df):
 
 if __name__ == "__main__":
     data_dir = Path(__file__).parent.parent / "data"
-    ethnography_texts_df = pd.read_csv(data_dir / "ethnography_texts.csv")
-    ethnography_texts = ethnography_texts_df['paragraph'].dropna().tolist()  # Use actual texts
+    ethnographic_texts_df = pd.read_csv(data_dir / "ethnographic_texts.csv")
+    ethnographic_texts = ethnographic_texts_df['paragraph'].dropna().tolist()  # Use actual texts
     features_df = pd.read_csv(data_dir / "features.csv")
 
-    print(f"Processing {len(ethnography_texts)} ethnographys")
+    print(f"Processing {len(ethnographic_texts)} ethnographys")
     print(f"Processing {len(features_df)} features")
     
-    costs, total_input_tokens, total_output_tokens = estimate_cost(ethnography_texts, features_df)
+    costs, total_input_tokens, total_output_tokens = estimate_cost(ethnographic_texts, features_df)
 
     print(f"\nTotal input tokens: {total_input_tokens:,}")
     print(f"Total output tokens: {total_output_tokens:,}")

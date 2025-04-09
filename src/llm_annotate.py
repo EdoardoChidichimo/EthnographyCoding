@@ -1,5 +1,5 @@
 import pandas as pd
-from config import LLM_MODELS, create_prompt
+from config import LLM_MODELS, create_prompt, CoT
 from utils import load_features
 from llm_client import get_llm_client
 
@@ -12,6 +12,7 @@ def process_ethnography(ethnography_number, text, model):
     
     result_dict = {'ethnography_number': ethnography_number}
     logprobs_dict = {}  
+    reasoning_dict = {} if CoT else None
 
     for _, row in features_df.iterrows():
         feature_name = row['feature_name']
@@ -39,13 +40,28 @@ def process_ethnography(ethnography_number, text, model):
             if "logprobs" in response:
                 logprobs_dict[feature_name] = response["logprobs"]
             
+            # Handle chain of thought reasoning if enabled
+            if CoT:
+                # Split the response into reasoning and final answer
+                parts = result.split('\n')
+                reasoning = '\n'.join(parts[:-1])  # All but the last line is reasoning
+                final_answer = parts[-1]  # Last line is the answer
+                
+                # Store the reasoning
+                reasoning_dict[feature_name] = reasoning
+                result = final_answer
+            
             # Directly parse the result as a numerical value
             result_dict[feature_name] = float(result) if result.isdigit() else None
                 
         except Exception as e:
             print(f"Error processing feature {feature_name} for ethnography {ethnography_number}: {e}")
             result_dict[feature_name] = None
+            if CoT:
+                reasoning_dict[feature_name] = f"Error: {str(e)}"
 
     result_dict['logprobs'] = logprobs_dict
+    if CoT:
+        result_dict['reasoning'] = reasoning_dict
     
     return result_dict

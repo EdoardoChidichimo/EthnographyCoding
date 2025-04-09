@@ -4,7 +4,7 @@ Can large language models (LLMs) perform ethnographic feature extraction at a le
 
 ## Data Format
 
-### ethnography_texts.csv
+### ethnographic_texts.csv
 The file should contain two columns:
 
 - `ethnography_number`: Index
@@ -47,7 +47,7 @@ The file should contain at least 2 columns:
 
 ## Workflow
 
-1. **Data Loading**: Ethnographic texts are loaded from `ethnography_texts.csv`
+1. **Data Loading**: Ethnographic texts are loaded from `ethnographic_texts.csv`
 2. **Feature Definition**: ethnography features are loaded from `features.csv`
 3. **LLM Annotation**: Each text is processed by multiple LLM models
 4. **(Un)certainty Estimates**: Using OpenAI's logprobs, certainty estimates are given
@@ -91,7 +91,7 @@ The project implements several statistical analyses:
    ```
 
 3. **Prepare data**:
-   - Place your ethnographic texts in `data/ethnography_texts.csv`
+   - Place your ethnographic texts in `data/ethnographic_texts.csv`
    - Define features in `data/features.csv`
    - Add human annotations in `data/human_coded.csv`
 

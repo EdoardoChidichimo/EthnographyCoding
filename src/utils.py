@@ -69,16 +69,16 @@ def save_results(results_list: List[Dict],
                  feature_names: List[str], 
                  output_file: Path,
                  logprobs_data: Optional[Dict] = None,
-                 logprobs_file: Optional[Path] = None) -> None:
+                 reasoning_data: Optional[Dict] = None) -> None:
     """
-    Save processing results to CSV and optionally save logprobs data to JSON.
+    Save processing results to CSV and JSON. All data (results, logprobs, reasoning) is saved in a single JSON file.
     
     Args:
         results_list: List of dictionaries containing annotation results
         feature_names: List of feature names to ensure consistent column order
         output_file: Path to save the CSV results
         logprobs_data: Optional dictionary of logprobs data
-        logprobs_file: Optional path to save the logprobs data
+        reasoning_data: Optional dictionary of chain of thought reasoning data
     """
     # Convert results to DataFrame and ensure column order
     results_df = pd.DataFrame(results_list)
@@ -95,19 +95,27 @@ def save_results(results_list: List[Dict],
     results_df.to_csv(output_file, index=False)
     print(f"Saved results to {output_file}")
     
-    # Save logprobs if provided
-    if logprobs_data and logprobs_file:
-        try:
-            with open(logprobs_file, 'w') as f:
-                json.dump(logprobs_data, f, indent=2)
-            print(f"Saved logprobs to {logprobs_file}")
-        except TypeError as e:
-            # Fall back to pickle if JSON serialization fails
-            print(f"Warning: Error serializing logprobs data: {e}")
-            pickle_file = logprobs_file.with_suffix('.pkl')
-            with open(pickle_file, 'wb') as f:
-                pickle.dump(logprobs_data, f)
-            print(f"Saved logprobs to {pickle_file} (using pickle format)")
+    # Create a structured JSON output
+    json_output = {
+        "annotations": results_df.to_dict(orient='records'),
+        "logprobs": logprobs_data if logprobs_data else {},
+        "reasoning": reasoning_data if reasoning_data else {}
+    }
+    
+    # Save all data to a single JSON file
+    json_file = output_file.with_suffix('.json')
+    try:
+        with open(json_file, 'w') as f:
+            json.dump(json_output, f, indent=2)
+        print(f"Saved complete results to {json_file}")
+    except TypeError as e:
+        # Fall back to pickle if JSON serialization fails
+        print(f"Warning: Error serializing data to JSON: {e}")
+        pickle_file = json_file.with_suffix('.pkl')
+        with open(pickle_file, 'wb') as f:
+            pickle.dump(json_output, f)
+        print(f"Saved complete results to {pickle_file} (using pickle format)")
+    
             
     return results_df
 
